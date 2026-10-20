@@ -30,6 +30,7 @@ add_executable(parking_backend
     src/auth/auth.cpp
     src/auth/auth.h
     src/api/parking_responses.h
+    src/api/vehicle_responses.h
     src/config/config.cpp
     src/database/database.cpp
     src/validation/validation.cpp
@@ -65,6 +66,9 @@ if(BUILD_TESTING)
         PRIVATE
         Crow::Crow
     )
+    if(WIN32)
+        target_link_libraries(api_tests PRIVATE ws2_32)
+    endif()
 
     add_test(NAME api_tests COMMAND api_tests)
 

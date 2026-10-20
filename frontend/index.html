@@ -61,6 +61,44 @@
         </button>
       </section>
 
+      <section class="vehicles-panel panel" aria-labelledby="vehiclesTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Your vehicles</p>
+            <h2 id="vehiclesTitle">Manage vehicles</h2>
+            <p class="muted">Add vehicles you may use for parking reservations.</p>
+          </div>
+        </div>
+        <p class="vehicle-message" id="vehicleMessage" role="status" aria-live="polite"></p>
+        <form class="vehicle-form" id="vehicleForm">
+          <input name="vehicle_id" type="hidden" />
+          <label>Registration number
+            <input name="registration_number" type="text" maxlength="20" autocomplete="off" required />
+          </label>
+          <label>Vehicle type
+            <select name="vehicle_type" required>
+              <option value="car">Car</option>
+              <option value="bike">Bike</option>
+              <option value="scooter">Scooter</option>
+              <option value="truck">Truck</option>
+              <option value="bus">Bus</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label class="vehicle-electric">
+            <input name="is_electric" type="checkbox" />
+            Electric vehicle (required for EV charging slots)
+          </label>
+          <div class="vehicle-form-actions">
+            <button class="refresh-button" id="saveVehicleButton" type="submit">Add vehicle</button>
+            <button class="vehicle-cancel" id="cancelVehicleEdit" type="button" hidden>Cancel edit</button>
+          </div>
+        </form>
+        <div class="vehicle-list" id="vehicleList" aria-live="polite">
+          <p class="muted">Loading your vehicles...</p>
+        </div>
+      </section>
+
       <section class="area-picker panel">
         <div class="area-picker-title">
           <span class="section-icon" aria-hidden="true">⌖</span>
@@ -124,6 +162,8 @@
             <div><dt>Status</dt><dd id="detailStatus">Available to use</dd></div>
             <div><dt>Vehicle type</dt><dd id="detailVehicle">Car</dd></div>
             <div><dt>Slot type</dt><dd id="detailType">EV charging</dd></div>
+            <div id="detailRegistrationRow" hidden><dt>Registration</dt><dd id="detailRegistration"></dd></div>
+            <div id="detailDurationRow" hidden><dt>Parked for</dt><dd id="detailDuration"></dd></div>
             <div><dt>Features</dt><dd id="detailFeatures"><span class="feature-tag">⚡ EV charging</span></dd></div>
           </dl>
           <p class="selection-note">Select any slot on the map to view its current information.</p>

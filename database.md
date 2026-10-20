@@ -3,7 +3,7 @@
 ## Overview
 
 `database/schema.sql` defines the PostgreSQL database for the project. It
-creates the `pgcrypto` extension, 13 core tables, foreign keys, constraints,
+creates the `pgcrypto` extension, 14 core tables, foreign keys, constraints,
 and explicit indexes inside a transaction. The schema is a database design;
 it does not mean that all related backend services or frontend features are
 implemented.
@@ -87,6 +87,22 @@ Stores slots within areas.
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Creation time |
 
 Unique constraint: `(area_id, slot_number)`.
+
+### `parking_assignments`
+
+Stores active vehicle-to-slot parking assignments and their checkout times.
+An active assignment has a null `checkout_at`. Partial unique indexes ensure
+that a vehicle and a parking slot can each have at most one active assignment.
+
+| Column | Type | Constraints and default | Purpose |
+| --- | --- | --- | --- |
+| `assignment_id` | `BIGINT` identity | Primary key | Assignment identifier |
+| `user_id` | `BIGINT` | `NOT NULL`; FK to `users.user_id`, `ON DELETE RESTRICT` | Vehicle owner |
+| `vehicle_id` | `BIGINT` | `NOT NULL`; FK to `vehicles.vehicle_id`, `ON DELETE RESTRICT` | Parked vehicle |
+| `slot_id` | `BIGINT` | `NOT NULL`; FK to `parking_slots.slot_id`, `ON DELETE RESTRICT` | Occupied slot |
+| `parked_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Parking start |
+| `checkout_at` | `TIMESTAMPTZ` | Nullable; not before `parked_at` | Checkout time |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Record creation |
 
 ### `parking_rates`
 
@@ -219,8 +235,9 @@ Stores user notifications.
 - `users` has many `vehicles`, `reservations`, `parking_sessions`,
   `payments`, and `notifications`.
 - `parking_areas` has many `parking_slots` and `parking_rates`.
-- `parking_slots` has many `reservations`, `parking_sessions`, and
-  `maintenance` records.
+- `parking_assignments` links a user and vehicle to a parking slot until checkout.
+- `parking_slots` has many `parking_assignments`, `reservations`,
+  `parking_sessions`, and `maintenance` records.
 - `reservations` references one user, vehicle, and slot, and can have one
   `qr_tokens` row and at most one `parking_sessions` row because those foreign
   keys are unique.
@@ -297,6 +314,6 @@ would require reviewing business dependencies and future application rules.
 
 ## Database versus application implementation
 
-These 13 tables document the existing database design only. They do not prove
-that the C++ backend, REST resources, authentication, payment processing, or
-user-facing parking workflows have been implemented.
+These 14 tables document the database design. They do not by themselves prove
+that the corresponding C++ backend, REST resources, authentication, payment
+processing, or user-facing parking workflows have been implemented.

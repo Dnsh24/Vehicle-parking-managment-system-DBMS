@@ -71,3 +71,62 @@ pqxx::result Database::executeWrite(
     transaction.commit();
     return result;
 }
+
+VehicleDeletionResult Database::deleteVehicleAndHistory(
+    std::int64_t vehicle_id,
+    std::int64_t user_id) const
+{
+    pqxx::connection connection = createConnection();
+    pqxx::work transaction(connection);
+
+    const pqxx::result vehicle = transaction.exec_params(
+        "SELECT vehicle_id FROM vehicles "
+        "WHERE vehicle_id = $1 AND user_id = $2 FOR UPDATE",
+        vehicle_id,
+        user_id);
+    if (vehicle.empty())
+    {
+        return VehicleDeletionResult::not_found;
+    }
+
+    const pqxx::result active_parking = transaction.exec_params(
+        "SELECT EXISTS (SELECT 1 FROM parking_assignments "
+        "WHERE vehicle_id = $1 AND checkout_at IS NULL) "
+        "OR EXISTS (SELECT 1 FROM parking_sessions "
+        "WHERE vehicle_id = $1 AND exit_time IS NULL "
+        "AND status IN ('active', 'overstayed')) AS is_parked",
+        vehicle_id);
+    if (active_parking[0]["is_parked"].as<bool>())
+    {
+        return VehicleDeletionResult::currently_parked;
+    }
+
+    transaction.exec_params(
+        "DELETE FROM receipts "
+        "WHERE reservation_id IN (SELECT reservation_id FROM reservations WHERE vehicle_id = $1) "
+        "OR session_id IN (SELECT session_id FROM parking_sessions WHERE vehicle_id = $1) "
+        "OR payment_id IN (SELECT payment_id FROM payments "
+        "WHERE reservation_id IN (SELECT reservation_id FROM reservations WHERE vehicle_id = $1) "
+        "OR session_id IN (SELECT session_id FROM parking_sessions WHERE vehicle_id = $1))",
+        vehicle_id);
+    transaction.exec_params(
+        "DELETE FROM payments "
+        "WHERE reservation_id IN (SELECT reservation_id FROM reservations WHERE vehicle_id = $1) "
+        "OR session_id IN (SELECT session_id FROM parking_sessions WHERE vehicle_id = $1)",
+        vehicle_id);
+    transaction.exec_params(
+        "DELETE FROM parking_sessions WHERE vehicle_id = $1",
+        vehicle_id);
+    transaction.exec_params(
+        "DELETE FROM parking_assignments WHERE vehicle_id = $1",
+        vehicle_id);
+    transaction.exec_params(
+        "DELETE FROM reservations WHERE vehicle_id = $1",
+        vehicle_id);
+    transaction.exec_params(
+        "DELETE FROM vehicles WHERE vehicle_id = $1 AND user_id = $2",
+        vehicle_id,
+        user_id);
+    transaction.commit();
+    return VehicleDeletionResult::deleted;
+}

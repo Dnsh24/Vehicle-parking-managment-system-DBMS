@@ -1,5 +1,6 @@
 #include "../src/api/errors.h"
 #include "../src/api/parking_responses.h"
+#include "../src/api/vehicle_responses.h"
 
 #include <cassert>
 #include <string>
@@ -37,5 +38,11 @@ int main()
         "available").dump();
     assert(slot.find("\"slot_number\":\"G-A01\"") != std::string::npos);
     assert(slot.find("\"status\":\"available\"") != std::string::npos);
+
+    const std::string vehicle = api::vehicleJson(4, "ABC123", "car", true).dump();
+    assert(vehicle.find("\"vehicle_id\":4") != std::string::npos);
+    assert(vehicle.find("\"registration_number\":\"ABC123\"") != std::string::npos);
+    assert(vehicle.find("\"vehicle_type\":\"car\"") != std::string::npos);
+    assert(vehicle.find("\"is_electric\":true") != std::string::npos);
     return 0;
 }

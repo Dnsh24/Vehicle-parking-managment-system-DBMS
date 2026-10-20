@@ -18,7 +18,9 @@
 - Phase 1 parking availability: database-backed areas and slots load in the
   frontend
 - Phase 2 authentication: registration, login, logout, sessions, and profiles
-- PostgreSQL schema with 13 core tables, constraints, and indexes
+- Phase 3 vehicle management: authenticated vehicle CRUD, EV-compatible slot
+  selection, parking, checkout, map display, and live end-to-end verification
+- PostgreSQL schema with 14 core tables, constraints, and indexes
 
 ### In progress
 
@@ -61,8 +63,9 @@ Users should be able to add, edit, delete, and view vehicles. Vehicle types
 and EV status must be validated. A vehicle must belong to the authenticated
 user.
 
-**Status:** Planned. The `vehicles` table exists, but no vehicle API or UI
-exists.
+**Status:** Completed. Authenticated vehicle CRUD, owner validation, EV-aware
+slot selection, parking and checkout, and map occupant details are implemented
+and have been verified end to end.
 
 ### Parking areas and slots
 
@@ -305,8 +308,15 @@ Reference: `users` in [database.md](database.md).
 
 #### Phase 3: Vehicle management
 
+**Status:** Completed. Backend, frontend, database migration, and live
+end-to-end vehicle parking and checkout flows have been verified.
+
 - Backend: authenticated vehicle CRUD and ownership validation.
-- Frontend: vehicle list, add, edit, delete, vehicle type, and EV controls.
+- Backend: compatible-slot lookup, atomic vehicle parking, and checkout that
+  releases the slot. These direct assignments track occupancy only; the
+  reservation/session billing workflow remains in later phases.
+- Frontend: vehicle list, add, edit, delete, vehicle type and EV controls,
+  available-slot selection, and active parking/checkout display.
 - Test duplicate registrations, invalid types, and unauthorized access.
 
 Reference: `vehicles` in [database.md](database.md).

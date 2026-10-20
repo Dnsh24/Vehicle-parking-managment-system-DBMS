@@ -2,17 +2,18 @@
 
 ## Current status
 
-The API includes authentication, profiles, and read-only
-parking-availability resources.
+The API includes authentication, profiles, owner-scoped vehicle management,
+and read-only parking-availability resources.
 
 | Component | Current status |
 | --- | --- |
 | Crow backend | Implemented as an initial server |
-| REST endpoints | Health endpoints and parking-availability read endpoints implemented |
+| REST endpoints | Health, parking availability, and vehicle endpoints implemented |
 | PostgreSQL through C++ | Connectivity check implemented |
-| Frontend API integration | Implemented for the two test endpoints |
+| Frontend API integration | Authentication, parking availability, and vehicle management implemented |
 | Authentication and authorization | Implemented with bearer sessions |
-| Parking resources | Not implemented |
+| Vehicle management | Authenticated CRUD endpoints implemented |
+| Parking resource writes | Not implemented |
 
 The database tables are not API resources until backend routes and operations
 are implemented for them.
@@ -54,6 +55,91 @@ Updates the authenticated user's `name` and optional `phone`.
 
 Updates the authenticated user's password. The JSON body requires
 `current_password` and a `new_password` of at least eight characters.
+
+### `GET /api/vehicles`
+
+Returns only vehicles owned by the authenticated user.
+
+```json
+{
+  "vehicles": [
+    {
+      "vehicle_id": 4,
+      "registration_number": "ABC123",
+      "vehicle_type": "car",
+      "is_electric": true
+    }
+  ]
+}
+```
+
+Requests without a valid bearer token return `401 UNAUTHENTICATED`. Database
+failures return `503 DATABASE_UNAVAILABLE`. Parked vehicles include a `parking`
+object containing the active slot and parking start time.
+
+### `POST /api/vehicles`
+
+Creates a vehicle for the authenticated user. Registration numbers are trimmed
+and converted to uppercase. The JSON body requires `registration_number` (1-20
+characters) and `vehicle_type` (`car`, `bike`, `scooter`, `truck`, `bus`, or
+`other`). `is_electric` is an optional boolean that defaults to `false`.
+
+Returns `201 Created` with the created vehicle in a `vehicle` object.
+Duplicate registration numbers return `409
+VEHICLE_REGISTRATION_ALREADY_EXISTS`; invalid fields return `400` with a
+specific error code. The owner is taken from the authenticated session, never
+from the request body.
+
+After a successful create, the frontend shows available slots compatible with
+the vehicle.
+
+### `GET /api/vehicles/{vehicle_id}/available-slots`
+
+Returns active-area slots that are currently available and match the vehicle's
+type. EV charging slots are included only when the vehicle is marked electric.
+Only the vehicle's owner can request its slots. A vehicle that is already parked
+returns `409 VEHICLE_ALREADY_PARKED`.
+
+### `POST /api/vehicles/{vehicle_id}/park`
+
+Assigns the owner's vehicle to an available compatible slot. The JSON body
+requires a positive `slot_id`. The operation atomically marks the slot
+occupied and records the active assignment. EV charging slots require the
+vehicle to be marked electric. A slot that is no longer available, is inactive,
+or is incompatible returns `409 PARKING_SLOT_UNAVAILABLE`.
+
+The response contains a `parking` object with the assignment, vehicle, slot,
+area, and parking start time. An active slot remains occupied until checkout.
+This direct assignment tracks occupancy only; it does not create a reservation
+or a billable `parking_session`.
+
+### `POST /api/vehicles/{vehicle_id}/checkout`
+
+Checks out the owner's vehicle, records the checkout time, and releases its
+slot back to `available`. A vehicle without an active assignment returns `404
+ACTIVE_PARKING_NOT_FOUND`.
+
+`GET /api/vehicles` includes the active assignment as `parking` when the
+vehicle is parked; otherwise that property is omitted. It also includes
+`can_delete`, which is true only when the vehicle is not actively parked.
+Vehicle edits are rejected while the vehicle is parked.
+
+### `PUT /api/vehicles/{vehicle_id}`
+
+Updates the authenticated user's vehicle using the same fields as the create
+request. Returns the updated vehicle in a `vehicle` object. A vehicle that
+does not exist or belongs to another user returns `404 VEHICLE_NOT_FOUND`.
+Duplicate registration numbers return `409
+VEHICLE_REGISTRATION_ALREADY_EXISTS`.
+
+### `DELETE /api/vehicles/{vehicle_id}`
+
+Deletes the authenticated user's vehicle and returns `204 No Content`. A
+vehicle that does not exist or belongs to another user returns `404
+VEHICLE_NOT_FOUND`. An actively parked vehicle returns `409
+VEHICLE_CURRENTLY_PARKED` and must be checked out first. After checkout,
+deletion permanently removes the vehicle and its associated assignments,
+reservations, sessions, payments, and receipts in one database transaction.
 
 ### `GET /api/hello`
 
@@ -128,6 +214,11 @@ Database failures return `503 DATABASE_UNAVAILABLE`.
 ### `GET /api/parking-areas/{area_id}/slots`
 
 Returns the selected floor and all of its configured parking slots.
+Slots with a live vehicle assignment or active parking session include
+`vehicle_registration`, `parked_at` (UTC ISO-8601), and `parked_seconds`.
+Legacy `occupied` or `reserved` slot statuses without a current assignment,
+session, or reservation are reported as available so seeded stale states do not
+look like cars are still parked.
 
 Example response:
 
@@ -156,15 +247,14 @@ return `503 DATABASE_UNAVAILABLE`.
 
 ## Frontend usage
 
-`frontend/js/app.js` calls both routes using `fetch` against
-`http://localhost:3000`. The page displays the returned message and reports a
-connection error when the backend cannot be reached.
+`frontend/js/app.js` calls the documented routes using `fetch` against
+`http://localhost:3000`. Vehicle requests include the authenticated bearer
+token.
 
 ## Planned API work
 
 The following areas are planned, not implemented:
 
-- Vehicle management
 - Parking-area, slot, and rate management writes
 - Availability and reservation operations
 - QR-token check-in

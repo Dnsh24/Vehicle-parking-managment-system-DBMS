@@ -7,11 +7,11 @@ frontend, a C++ backend using Crow, and a PostgreSQL database.
 
 | Component | Status |
 | --- | --- |
-| Frontend | Basic test page implemented. It calls the two backend routes described in [API.md](API.md). |
-| PostgreSQL | Schema implemented with 13 core tables, constraints, and indexes. See [database.md](database.md). |
-| C++ backend | Initial Crow server implemented across `backend/src/`, with centralized configuration and a database helper. It checks PostgreSQL connectivity and exposes two test routes. |
-| REST API | Two test endpoints implemented: `/api/hello` and `/api/database`. Parking-management endpoints are pending. |
-| Frontend-backend integration | Basic integration implemented through browser `fetch` calls to `http://localhost:3000`. |
+| Frontend | Authentication, parking availability, and vehicle parking/checkout UI implemented. |
+| PostgreSQL | Schema implemented with 14 core tables, constraints, and indexes. See [database.md](database.md). |
+| C++ backend | Crow server with PostgreSQL access, bearer authentication, parking availability, vehicle CRUD, and direct parking assignments. |
+| REST API | Health, authentication, profile, parking availability, and vehicle-management endpoints are implemented. |
+| Frontend-backend integration | Browser `fetch` integration targets `http://localhost:3000`. |
 
 The database schema does not by itself mean that the corresponding user-facing
 features or CRUD operations are implemented.
@@ -42,33 +42,35 @@ HTML/CSS/JavaScript frontend
        PostgreSQL database
 ```
 
-Only the basic connectivity path and test routes are currently implemented.
-Parking reservations, payments, QR processing, and the remaining application
-APIs are planned rather than complete. Phase 2 authentication and profiles are
-implemented, subject to runtime verification.
+Authentication, profiles, parking availability, and vehicle management with
+manual slot assignment and checkout are implemented. Reservations, payments,
+QR processing, and the remaining application APIs are planned rather than
+complete. The Phase 3 schema migration must be applied to an existing database
+before the updated vehicle parking routes can run.
 
 ## Implemented features
 
 ### Frontend
 
-- Displays a parking-management test page.
-- Provides a button for testing `/api/hello`.
-- Provides a button for testing `/api/database`.
-- Displays loading, success, and connection-error messages.
-- Uses CORS-compatible requests to the backend at port 3000.
+- Supports registration, login, and logout.
+- Loads parking-area and slot availability.
+- Adds and edits vehicles, shows compatible available slots, and parks a
+  selected vehicle until checkout.
+- Uses bearer-authenticated requests to the backend at port 3000.
 
 ### Backend
 
 - Creates a Crow application with CORS middleware.
 - Attempts a PostgreSQL connection to the `parking_management` database.
 - Executes `SELECT 1` when the connection is established.
-- Exposes `GET /api/hello`.
-- Exposes `GET /api/database`.
-- Returns a database connection status in the database test response.
+- Provides bearer-session authentication and profile operations.
+- Loads parking areas and slots from PostgreSQL.
+- Provides owner-scoped vehicle CRUD, compatible-slot selection, and checkout.
+- Atomically claims/releases parking slots and persists assignment history.
 
 ### Database
 
-- Defines the 13 core tables documented in [database.md](database.md).
+- Defines the 14 core tables documented in [database.md](database.md).
 - Uses `pgcrypto` and `gen_random_uuid()` for QR token generation.
 - Defines primary keys, foreign keys, checks, unique constraints, and indexes.
 
@@ -77,9 +79,8 @@ implemented, subject to runtime verification.
 The following are described in [planning.md](planning.md) but are not yet
 implemented as complete application functionality:
 
-- Vehicle registration and management
 - Parking-area and parking-slot management
-- Availability search and slot allocation
+- Reservation-based availability and slot allocation
 - Reservations and reservation expiry
 - QR-based check-in and vehicle entry
 - Parking sessions, exit processing, and overstay calculation
@@ -144,7 +145,7 @@ Create a PostgreSQL database named `parking_management`, then run:
 psql -U <user> -d parking_management -f database/schema.sql
 ```
 
-The schema file creates the `pgcrypto` extension and all 13 tables. Do not put
+The schema file creates the `pgcrypto` extension and all 14 tables. Do not put
 real passwords in documentation or source code.
 
 For an existing database created before Phase 2 authentication, run the
@@ -153,6 +154,20 @@ repeatable migration:
 ```text
 psql -U <user> -d parking_management -f database/phase2_auth.sql
 ```
+
+Apply the Phase 3 parking-assignment migration after the schema, any Phase 2
+migration, and any optional seed data, but before starting the updated backend:
+
+```text
+psql -U <user> -d parking_management -f database/phase3_vehicle_parking.sql
+```
+
+This migration creates the active parking-assignment table, clears seeded
+`occupied` and `reserved` slot statuses when no active reservation/session/
+assignment owns them, and deletes vehicle records that are not referenced by
+reservation, session, or parking-assignment history. Linked vehicles and
+historical records are preserved. Maintenance and unavailable slots are left
+unchanged.
 
 For local Phase 1 development data, run the repeatable seed script after the
 schema:

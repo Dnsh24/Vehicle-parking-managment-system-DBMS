@@ -1,6 +1,6 @@
 -- Vehicle Parking Management System
 -- PostgreSQL database schema
--- 13 core tables
+-- 14 core tables
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 BEGIN;
 
@@ -40,7 +40,12 @@ CREATE INDEX auth_sessions_token_lookup
     ON auth_sessions(token_hash);
 
 -- ============================================================
--- 2. VEHICLES
+-- 2. AUTHENTICATION SESSIONS
+-- ============================================================
+-- auth_sessions is declared alongside users because it references users.
+
+-- ============================================================
+-- 3. VEHICLES
 -- ============================================================
 
 CREATE TABLE vehicles (
@@ -61,7 +66,7 @@ CREATE TABLE vehicles (
 );
 
 -- ============================================================
--- 3. PARKING AREAS
+-- 4. PARKING AREAS
 -- ============================================================
 
 CREATE TABLE parking_areas (
@@ -89,7 +94,7 @@ CREATE TABLE parking_areas (
 );
 
 -- ============================================================
--- 4. PARKING SLOTS
+-- 5. PARKING SLOTS
 -- ============================================================
 
 CREATE TABLE parking_slots (
@@ -118,7 +123,50 @@ CREATE TABLE parking_slots (
 );
 
 -- ============================================================
--- 5. PARKING RATES
+-- 6. ACTIVE PARKING ASSIGNMENTS
+-- ============================================================
+
+CREATE TABLE parking_assignments (
+    assignment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    vehicle_id BIGINT NOT NULL,
+    slot_id BIGINT NOT NULL,
+    parked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    checkout_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_parking_assignments_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_parking_assignments_vehicle
+        FOREIGN KEY (vehicle_id)
+        REFERENCES vehicles(vehicle_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_parking_assignments_slot
+        FOREIGN KEY (slot_id)
+        REFERENCES parking_slots(slot_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT parking_assignments_checkout_check
+        CHECK (checkout_at IS NULL OR checkout_at >= parked_at)
+);
+
+CREATE UNIQUE INDEX parking_assignments_active_vehicle
+    ON parking_assignments(vehicle_id)
+    WHERE checkout_at IS NULL;
+
+CREATE UNIQUE INDEX parking_assignments_active_slot
+    ON parking_assignments(slot_id)
+    WHERE checkout_at IS NULL;
+
+CREATE INDEX parking_assignments_user_history
+    ON parking_assignments(user_id, parked_at DESC);
+
+-- ============================================================
+-- 7. PARKING RATES
 -- ============================================================
 
 CREATE TABLE parking_rates (
@@ -153,7 +201,7 @@ CREATE TABLE parking_rates (
 );
 
 -- ============================================================
--- 6. RESERVATIONS
+-- 8. RESERVATIONS
 -- ============================================================
 
 CREATE TABLE reservations (
@@ -189,7 +237,7 @@ CREATE TABLE reservations (
 );
 
 -- ============================================================
--- 7. QR TOKENS
+-- 9. QR TOKENS
 -- ============================================================
 
 CREATE TABLE qr_tokens (
@@ -207,7 +255,7 @@ CREATE TABLE qr_tokens (
 );
 
 -- ============================================================
--- 8. PARKING SESSIONS
+-- 10. PARKING SESSIONS
 -- ============================================================
 
 CREATE TABLE parking_sessions (
@@ -261,7 +309,7 @@ CREATE TABLE parking_sessions (
 );
 
 -- ============================================================
--- 9. MAINTENANCE
+-- 11. MAINTENANCE
 -- ============================================================
 
 CREATE TABLE maintenance (
@@ -286,7 +334,7 @@ CREATE TABLE maintenance (
 );
 
 -- ============================================================
--- 10. PAYMENTS
+-- 12. PAYMENTS
 -- ============================================================
 
 CREATE TABLE payments (
@@ -334,7 +382,7 @@ CREATE TABLE payments (
 );
 
 -- ============================================================
--- 11. RECEIPTS
+-- 13. RECEIPTS
 -- ============================================================
 
 CREATE TABLE receipts (
@@ -378,7 +426,7 @@ CREATE TABLE receipts (
 );
 
 -- ============================================================
--- 12. NOTIFICATIONS
+-- 14. NOTIFICATIONS
 -- ============================================================
 
 CREATE TABLE notifications (
