@@ -236,7 +236,11 @@ Administrators should be able to:
 Dashboard statistics should include users, vehicles, areas, slots, slot
 statuses, reservations, payments, revenue, and overstays.
 
-**Status:** Planned. No admin authentication, APIs, or dashboard exists.
+**Status:** Basic administrator management and maintenance completed in Phase 4.
+Admin authentication, user role and status controls, area/slot management, rate
+rules, and maintenance scheduling endpoints and frontend console are implemented
+and verified. Advanced dashboard statistics, charts, and financial reports remain
+scheduled for Version 2.
 
 ## 5. Build phases
 
@@ -323,14 +327,23 @@ Reference: `vehicles` in [database.md](database.md).
 
 #### Phase 4: Basic administration and maintenance
 
-- Backend: administrator-only area, slot, rate, user, and maintenance
-  operations.
-- Frontend: basic management screens for parking areas, slots, rates, and
-  users.
-- Test roles, slot compatibility, duplicate slot numbers, maintenance
-  periods, and invalid status changes.
+**Status:** Completed. Backend administrator endpoints, response helpers, role
+enforcement, frontend management console tabs, seed data, and live end-to-end
+tests have been verified.
 
-References: Sections 4 and 15; related tables in [database.md](database.md).
+- Backend: administrator-only user management (list, role change, status toggle),
+  parking area CRUD, slot CRUD with uniqueness and occupancy checks, rate
+  matrix CRUD, and slot maintenance scheduling with enriched area information.
+- Frontend: administrator console with topbar role detection, user/admin view
+  switcher, and dedicated management screens for users, areas, slots, rates,
+  and maintenance.
+- Database: `database/seed_phase4_admin.sql` seeds default admin credentials
+  (`admin@example.com` / `AdminPass123!`), baseline rate rules, and active
+  maintenance periods.
+- Testing: unit response tests in `backend/tests/admin_tests.cpp`, role checks,
+  duplicate prevention, and live end-to-end integration verified.
+
+References: Section 4; related tables in [database.md](database.md).
 
 #### Phase 5: Search and reservations
 

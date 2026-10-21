@@ -15,6 +15,11 @@
           <small>PARKING MANAGEMENT SYSTEM</small>
         </span>
       </a>
+      <span class="admin-badge" id="adminBadge" hidden>ADMIN</span>
+      <nav class="view-switcher" id="viewSwitcher" hidden aria-label="View selection">
+        <button class="view-switch-btn active" id="viewUserMode" type="button">User View</button>
+        <button class="view-switch-btn" id="viewAdminMode" type="button">Admin Console</button>
+      </nav>
       <div class="topbar-status"><span class="pulse"></span> Live availability</div>
       <button class="icon-button" type="button" aria-label="Notifications">♡</button>
       <button class="avatar" id="logoutButton" type="button" aria-label="Log out">JD</button>
@@ -23,13 +28,20 @@
     <section class="auth-gate" id="authGate">
       <div class="auth-screen" id="loginScreen">
         <div class="auth-brand"><span class="auth-brand-mark">P</span><span><strong>ParkFlow</strong><small>PARKING MANAGEMENT SYSTEM</small></span></div>
-        <h1>Log In</h1>
-        <p class="auth-description">Please enter your credentials to access<br />your dashboard.</p>
+        <div class="auth-mode-tabs" role="tablist" aria-label="Login type">
+          <button class="auth-mode-tab active" id="userLoginMode" type="button" role="tab" aria-selected="true">User Login</button>
+          <button class="auth-mode-tab" id="adminLoginMode" type="button" role="tab" aria-selected="false">Admin Login</button>
+        </div>
+        <div id="adminIndicator" class="admin-badge-indicator" hidden>
+          <span>🔒</span> Administrator Portal
+        </div>
+        <h1 id="loginHeading">Log In</h1>
+        <p class="auth-description" id="loginDescription">Please enter your credentials to access<br />your dashboard.</p>
         <form id="loginForm" class="auth-form">
-          <label class="auth-input"><span aria-hidden="true">♙</span><input name="email" type="text" placeholder="Username or Email" autocomplete="username" required /></label>
-          <label class="auth-input"><span aria-hidden="true">♙</span><input name="password" type="password" placeholder="Password" autocomplete="current-password" required /><button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button></label>
+          <label class="auth-input"><span aria-hidden="true">♙</span><input name="email" id="loginEmailInput" type="text" placeholder="Username or Email" autocomplete="username" required /></label>
+          <label class="auth-input"><span aria-hidden="true">♙</span><input name="password" id="loginPasswordInput" type="password" placeholder="Password" autocomplete="current-password" required /><button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button></label>
           <div class="auth-options"><button class="forgot-password" id="forgotPasswordButton" type="button">Forgot Password?</button><label class="remember-option"><input name="remember_me" type="checkbox" /> Remember me</label></div>
-          <button class="auth-submit" type="submit">Log In</button>
+          <button class="auth-submit" id="loginSubmitButton" type="submit">Log In</button>
         </form>
         <button class="auth-switch" id="registerSwitch" type="button">Don't have an account? Register</button>
       </div>
@@ -49,6 +61,7 @@
       <p class="auth-error" id="authError" role="alert"></p>
     </section>
 
+    <!-- User Protected Content -->
     <main class="page-shell" id="protectedContent" hidden>
       <section class="page-heading">
         <div>
@@ -171,6 +184,319 @@
       </div>
     </main>
 
+    <!-- Administrator Console Content -->
+    <main class="page-shell admin-shell" id="adminConsole" hidden>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">System Administration</p>
+          <h1>Administrator Console</h1>
+          <p class="muted">Manage users, parking areas, slots, rate structures, and maintenance.</p>
+        </div>
+        <button class="refresh-button" id="adminRefreshButton" type="button">
+          <span aria-hidden="true">↻</span> Refresh Admin Data
+        </button>
+      </section>
+
+      <p class="admin-message" id="adminGlobalMessage" role="status" aria-live="polite"></p>
+
+      <nav class="admin-nav-tabs" aria-label="Admin Sections">
+        <button class="admin-nav-tab active" data-admin-tab="users" type="button">Users</button>
+        <button class="admin-nav-tab" data-admin-tab="areas" type="button">Parking Areas</button>
+        <button class="admin-nav-tab" data-admin-tab="slots" type="button">Parking Slots</button>
+        <button class="admin-nav-tab" data-admin-tab="rates" type="button">Parking Rates</button>
+        <button class="admin-nav-tab" data-admin-tab="maintenance" type="button">Maintenance</button>
+      </nav>
+
+      <!-- Users Panel -->
+      <section class="panel admin-panel" id="adminUsersPanel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Accounts</p>
+            <h2>User Management</h2>
+            <p class="muted">Manage user roles and active status.</p>
+          </div>
+        </div>
+        <p class="admin-message" id="adminUsersMessage" role="status" aria-live="polite"></p>
+        <div class="admin-table-container">
+          <table class="admin-table" id="adminUsersTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersList">
+              <tr><td colspan="8" class="muted">Loading users...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Areas Panel -->
+      <section class="panel admin-panel" id="adminAreasPanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Locations</p>
+            <h2>Parking Areas</h2>
+            <p class="muted">Configure parking areas, locations, hours, and capacity.</p>
+          </div>
+        </div>
+        <p class="admin-message" id="adminAreasMessage" role="status" aria-live="polite"></p>
+        <form class="admin-form" id="adminAreaForm">
+          <input name="area_id" type="hidden" />
+          <label>Area name
+            <input name="name" type="text" maxlength="150" placeholder="e.g. Mall Central - Third Floor" required />
+          </label>
+          <label>Location
+            <input name="location" type="text" placeholder="e.g. Mall Central, East Wing" required />
+          </label>
+          <label>Operating hours
+            <input name="operating_hours" type="text" placeholder="e.g. 07:00 - 22:00" />
+          </label>
+          <label>Capacity
+            <input name="capacity" type="number" min="0" placeholder="e.g. 32" required />
+          </label>
+          <label>Status
+            <select name="status" required>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+          <label>Latitude (Optional)
+            <input name="latitude" type="number" step="any" min="-90" max="90" placeholder="e.g. 17.3850" />
+          </label>
+          <label>Longitude (Optional)
+            <input name="longitude" type="number" step="any" min="-180" max="180" placeholder="e.g. 78.4867" />
+          </label>
+          <div class="admin-form-actions">
+            <button class="refresh-button" id="saveAreaButton" type="submit">Save Area</button>
+            <button class="vehicle-cancel" id="cancelAreaEdit" type="button" hidden>Cancel Edit</button>
+          </div>
+        </form>
+        <div class="admin-table-container">
+          <table class="admin-table" id="adminAreasTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Location</th>
+                <th>Hours</th>
+                <th>Capacity</th>
+                <th>Slots</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminAreasList">
+              <tr><td colspan="8" class="muted">Loading areas...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Slots Panel -->
+      <section class="panel admin-panel" id="adminSlotsPanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Slots</p>
+            <h2>Parking Slots</h2>
+            <p class="muted">Manage individual slots, vehicle compatibility, EV charging, and states.</p>
+          </div>
+          <div class="admin-filter-bar">
+            <label for="adminSlotAreaSelect">Select Area:</label>
+            <select id="adminSlotAreaSelect"></select>
+          </div>
+        </div>
+        <p class="admin-message" id="adminSlotsMessage" role="status" aria-live="polite"></p>
+        <form class="admin-form" id="adminSlotForm">
+          <input name="slot_id" type="hidden" />
+          <label>Slot number
+            <input name="slot_number" type="text" maxlength="30" placeholder="e.g. G-A01" required />
+          </label>
+          <label>Vehicle type
+            <select name="vehicle_type" required>
+              <option value="car">Car</option>
+              <option value="bike">Bike</option>
+              <option value="scooter">Scooter</option>
+              <option value="truck">Truck</option>
+              <option value="bus">Bus</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>Slot type
+            <input name="slot_type" type="text" maxlength="30" placeholder="standard, ev, two-wheeler..." required />
+          </label>
+          <label class="vehicle-electric">
+            <input name="is_ev" type="checkbox" />
+            EV charging supported
+          </label>
+          <label>Status
+            <select name="status" required>
+              <option value="available">Available</option>
+              <option value="reserved">Reserved</option>
+              <option value="occupied">Occupied</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="unavailable">Unavailable</option>
+            </select>
+          </label>
+          <div class="admin-form-actions">
+            <button class="refresh-button" id="saveSlotButton" type="submit">Add Slot</button>
+            <button class="vehicle-cancel" id="cancelSlotEdit" type="button" hidden>Cancel Edit</button>
+          </div>
+        </form>
+        <div class="admin-table-container">
+          <table class="admin-table" id="adminSlotsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Slot Number</th>
+                <th>Vehicle Type</th>
+                <th>Slot Type</th>
+                <th>EV?</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminSlotsList">
+              <tr><td colspan="7" class="muted">Select an area to load slots...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Rates Panel -->
+      <section class="panel admin-panel" id="adminRatesPanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Pricing</p>
+            <h2>Parking Rates</h2>
+            <p class="muted">Set base hourly rates, overstay charges, and EV charging fees.</p>
+          </div>
+        </div>
+        <p class="admin-message" id="adminRatesMessage" role="status" aria-live="polite"></p>
+        <form class="admin-form" id="adminRateForm">
+          <input name="rate_id" type="hidden" />
+          <label>Area
+            <select name="area_id" id="adminRateAreaSelect" required></select>
+          </label>
+          <label>Vehicle type
+            <select name="vehicle_type" required>
+              <option value="car">Car</option>
+              <option value="bike">Bike</option>
+              <option value="scooter">Scooter</option>
+              <option value="truck">Truck</option>
+              <option value="bus">Bus</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>Slot type
+            <input name="slot_type" type="text" maxlength="30" placeholder="standard, ev, two-wheeler..." required />
+          </label>
+          <label>Hourly rate (₹)
+            <input name="hourly_rate" type="number" step="0.01" min="0" placeholder="e.g. 40.00" required />
+          </label>
+          <label>Overstay rate (₹)
+            <input name="overstay_rate" type="number" step="0.01" min="0" placeholder="e.g. 60.00" required />
+          </label>
+          <label>EV charging rate (₹)
+            <input name="ev_charging_rate" type="number" step="0.01" min="0" placeholder="e.g. 15.00" required />
+          </label>
+          <div class="admin-form-actions">
+            <button class="refresh-button" id="saveRateButton" type="submit">Save Rate</button>
+            <button class="vehicle-cancel" id="cancelRateEdit" type="button" hidden>Cancel Edit</button>
+          </div>
+        </form>
+        <div class="admin-table-container">
+          <table class="admin-table" id="adminRatesTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Area</th>
+                <th>Vehicle Type</th>
+                <th>Slot Type</th>
+                <th>Hourly (₹)</th>
+                <th>Overstay (₹)</th>
+                <th>EV Charge (₹)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminRatesList">
+              <tr><td colspan="8" class="muted">Loading rates...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Maintenance Panel -->
+      <section class="panel admin-panel" id="adminMaintenancePanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Maintenance</p>
+            <h2>Slot Maintenance</h2>
+            <p class="muted">Schedule maintenance windows and track repairs across parking slots.</p>
+          </div>
+        </div>
+        <p class="admin-message" id="adminMaintenanceMessage" role="status" aria-live="polite"></p>
+        <form class="admin-form" id="adminMaintenanceForm">
+          <input name="maintenance_id" type="hidden" />
+          <label>Parking slot
+            <select name="slot_id" id="adminMaintenanceSlotSelect" required></select>
+          </label>
+          <label>Reason
+            <input name="reason" type="text" placeholder="e.g. Sensor calibration, line repaint" required />
+          </label>
+          <label>Start time
+            <input name="start_time" type="datetime-local" required />
+          </label>
+          <label>End time (Optional)
+            <input name="end_time" type="datetime-local" />
+          </label>
+          <label>Status
+            <select name="status" required>
+              <option value="scheduled">Scheduled</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+          <div class="admin-form-actions">
+            <button class="refresh-button" id="saveMaintenanceButton" type="submit">Save Schedule</button>
+            <button class="vehicle-cancel" id="cancelMaintenanceEdit" type="button" hidden>Cancel Edit</button>
+          </div>
+        </form>
+        <div class="admin-table-container">
+          <table class="admin-table" id="adminMaintenanceTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Area & Slot</th>
+                <th>Reason</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminMaintenanceList">
+              <tr><td colspan="7" class="muted">Loading maintenance records...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/parking.js"></script>
+    <script src="js/vehicles.js"></script>
+    <script src="js/admin.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>

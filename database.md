@@ -303,6 +303,15 @@ three EV, and three handicapped slots. The script is repeatable for these names
 and uses example slot statuses for local development only. It does not replace
 production data or create user accounts.
 
+## Phase 4 development seed
+
+`database/seed_phase4_admin.sql` creates baseline administrator data for development:
+- Default admin account: `admin@example.com` / `AdminPass123!` (role: `admin`, `is_active`: `TRUE`).
+- Baseline parking rates across existing parking areas for common vehicle and slot types (`standard`, `ev`, `two-wheeler`, `truck`).
+- Active slot maintenance records for slots currently in the `maintenance` state.
+
+The script is safe to run repeatedly without creating duplicates.
+
 ## DBMS concepts
 
 The schema uses relational entities and foreign-key relationships, domain

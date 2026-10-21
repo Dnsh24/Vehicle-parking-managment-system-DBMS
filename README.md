@@ -42,11 +42,10 @@ HTML/CSS/JavaScript frontend
        PostgreSQL database
 ```
 
-Authentication, profiles, parking availability, and vehicle management with
-manual slot assignment and checkout are implemented. Reservations, payments,
-QR processing, and the remaining application APIs are planned rather than
-complete. The Phase 3 schema migration must be applied to an existing database
-before the updated vehicle parking routes can run.
+Authentication, profiles, parking availability, vehicle management with
+manual slot assignment and checkout, and basic administrator management &
+maintenance are implemented. Reservations, payments, QR processing, and the
+remaining application APIs are planned rather than complete.
 
 ## Implemented features
 
@@ -56,6 +55,8 @@ before the updated vehicle parking routes can run.
 - Loads parking-area and slot availability.
 - Adds and edits vehicles, shows compatible available slots, and parks a
   selected vehicle until checkout.
+- Administrator console with user role/status controls, area management, slot
+  configuration, pricing rates, and maintenance scheduling.
 - Uses bearer-authenticated requests to the backend at port 3000.
 
 ### Backend
@@ -67,6 +68,8 @@ before the updated vehicle parking routes can run.
 - Loads parking areas and slots from PostgreSQL.
 - Provides owner-scoped vehicle CRUD, compatible-slot selection, and checkout.
 - Atomically claims/releases parking slots and persists assignment history.
+- Provides administrator operations for users, areas, slots, rates, and maintenance
+  with role-based access control (`admin` role enforcement).
 
 ### Database
 
@@ -79,7 +82,6 @@ before the updated vehicle parking routes can run.
 The following are described in [planning.md](planning.md) but are not yet
 implemented as complete application functionality:
 
-- Parking-area and parking-slot management
 - Reservation-based availability and slot allocation
 - Reservations and reservation expiry
 - QR-based check-in and vehicle entry

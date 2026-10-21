@@ -98,3 +98,57 @@ h1, h2, p { margin: 0; } h1 { margin-top: 6px; font-size: clamp(27px, 4vw, 35px)
 @media (max-width: 850px) { .content-grid { grid-template-columns: 1fr; }.details-panel { order: -1; }.details-panel .selection-note { display: none; }.selected-slot-visual { height: 80px; }.selected-slot-visual span { font-size: 20px; }.selected-slot-visual strong { font-size: 16px; } }
 @media (max-width: 760px) { .vehicle-form { grid-template-columns: 1fr 1fr; }.vehicle-form-actions { grid-column: 1 / -1; } }
 @media (max-width: 620px) { .topbar { height: 64px; padding: 0 18px; }.topbar-status { display: none; }.page-shell { padding: 28px 15px 45px; }.page-heading { align-items: start; gap: 18px; flex-direction: column; margin-bottom: 20px; }.refresh-button { align-self: stretch; }.area-picker { align-items: start; gap: 14px; flex-direction: column; padding: 16px; }.change-area { padding: 0; }.summary-grid { grid-template-columns: 1fr; gap: 9px; }.summary-card { padding: 13px; }.map-panel, .details-panel { padding: 15px; }.floor-tab { flex-direction: column; gap: 4px; padding: 7px 3px; font-size: 10px; }.parking-map { overflow-x: auto; padding: 30px 18px 25px; }.parking-map::after { position: absolute; top: 10px; right: 12px; color: #849398; content: "Swipe to explore"; font-size: 9px; }.map-row { min-width: 590px; }.legend { gap: 10px; }.map-controls { display: none; }.vehicles-panel { padding: 15px; }.vehicle-form { grid-template-columns: 1fr; }.vehicle-form-actions { grid-column: auto; }.vehicle-card { align-items: start; }.vehicle-actions { flex-direction: column; } }
+
+
+/* Administrator Console Styles */
+#adminConsole[hidden] { display: none !important; }
+.admin-badge { padding: 4px 8px; font-size: 10px; font-weight: 800; border-radius: 6px; background: #eeeafd; color: var(--purple); letter-spacing: 0.08em; }
+.admin-badge[hidden] { display: none !important; }
+.view-switcher { display: flex; background: #f0f4f5; border-radius: 8px; padding: 3px; gap: 4px; }
+.view-switcher[hidden] { display: none !important; }
+.view-switch-btn { padding: 6px 12px; font-size: 11px; font-weight: 700; border: 0; background: transparent; color: var(--muted); border-radius: 6px; transition: all 0.15s; }
+.view-switch-btn.active { background: white; color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.admin-shell { max-width: 1400px; margin: 0 auto; padding: 34px 28px 64px; }
+.admin-nav-tabs { display: flex; gap: 6px; margin-bottom: 22px; border-bottom: 2px solid var(--line); padding-bottom: 1px; overflow-x: auto; }
+.admin-nav-tab { padding: 10px 18px; font-size: 13px; font-weight: 700; border: 0; background: transparent; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -3px; cursor: pointer; white-space: nowrap; transition: all 0.15s; border-radius: 6px 6px 0 0; }
+.admin-nav-tab:hover { color: var(--ink); background: rgba(0,0,0,0.02); }
+.admin-nav-tab.active { color: var(--purple); border-bottom-color: var(--purple); background: white; }
+.admin-panel { padding: 24px; margin-bottom: 24px; }
+.admin-panel[hidden] { display: none !important; }
+.admin-message { min-height: 20px; margin-bottom: 14px; font-size: 13px; font-weight: 600; color: var(--green); }
+.admin-message.is-error { color: var(--red); }
+.admin-filter-bar { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; }
+.admin-filter-bar select { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line); font: inherit; font-size: 13px; background: white; }
+.admin-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; align-items: end; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.admin-form > label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.admin-form input:not([type="checkbox"]), .admin-form select { width: 100%; min-height: 40px; padding: 8px 10px; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: 13px; }
+.admin-form-actions { display: flex; align-items: center; gap: 10px; grid-column: 1 / -1; margin-top: 6px; }
+.admin-table-container { overflow-x: auto; margin-top: 14px; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.admin-table th { padding: 10px 14px; background: #f8fafb; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.admin-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.admin-table tr:hover td { background: #fafcfe; }
+.admin-table select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); font: inherit; font-size: 12px; background: white; }
+.admin-table button { padding: 6px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; border: 1px solid var(--line); background: white; cursor: pointer; transition: all 0.15s; }
+.admin-table button:hover { background: var(--gray-soft); }
+.admin-table button.danger { color: var(--red); border-color: #ffd0d3; background: var(--red-soft); }
+.admin-table button.danger:hover { background: #ffdbde; }
+.admin-table button.primary { color: white; background: var(--purple); border-color: var(--purple); }
+.admin-table button.success { color: var(--green); border-color: #b9e6cf; background: var(--green-soft); }
+.admin-actions-cell { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: capitalize; }
+.badge.badge-user { background: var(--blue-soft); color: var(--blue); }
+.badge.badge-admin { background: #eeeafd; color: var(--purple); }
+.badge.badge-active { background: var(--green-soft); color: var(--green); }
+.badge.badge-inactive { background: var(--gray-soft); color: var(--muted); }
+.badge.badge-closed { background: var(--red-soft); color: var(--red); }
+
+/* Auth Mode Tabs for User vs Admin Login */
+.auth-mode-tabs { display: flex; background: rgba(7, 31, 53, 0.7); border: 1px solid rgba(97, 200, 245, 0.35); border-radius: 8px; padding: 3px; gap: 4px; margin-bottom: 20px; }
+.auth-mode-tab { flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 700; border: 0; background: transparent; color: #b5d4e7; border-radius: 6px; cursor: pointer; transition: all 0.15s; text-align: center; }
+.auth-mode-tab:hover { color: white; }
+.auth-mode-tab.active { background: #10e4cf; color: #032b39; box-shadow: 0 2px 8px rgba(16, 228, 207, 0.3); }
+.admin-mode-active #adminLoginMode.active { background: #a855f7 !important; color: white !important; box-shadow: 0 2px 8px rgba(168, 85, 247, 0.4) !important; }
+.admin-mode-active .auth-submit { background: #a855f7 !important; color: white !important; box-shadow: 0 7px 16px rgba(168, 85, 247, 0.35) !important; }
+.admin-badge-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); border-radius: 6px; color: #d8b4fe; font-size: 11px; font-weight: 700; margin-bottom: 12px; }
+.admin-badge-indicator[hidden] { display: none !important; }

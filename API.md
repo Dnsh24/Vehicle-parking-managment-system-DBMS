@@ -7,13 +7,13 @@ and read-only parking-availability resources.
 
 | Component | Current status |
 | --- | --- |
-| Crow backend | Implemented as an initial server |
-| REST endpoints | Health, parking availability, and vehicle endpoints implemented |
-| PostgreSQL through C++ | Connectivity check implemented |
-| Frontend API integration | Authentication, parking availability, and vehicle management implemented |
-| Authentication and authorization | Implemented with bearer sessions |
-| Vehicle management | Authenticated CRUD endpoints implemented |
-| Parking resource writes | Not implemented |
+| Crow backend | Implemented with multi-threaded routing |
+| REST endpoints | Health, parking availability, vehicles, and administrator endpoints implemented |
+| PostgreSQL through C++ | libpqxx parameterized queries and transactions |
+| Frontend API integration | Authentication, parking availability, vehicle management, and admin console |
+| Authentication and authorization | Bearer sessions with role-based access (`user`, `admin`) |
+| Vehicle management | Authenticated CRUD and parking assignments implemented |
+| Administrator management | Users, areas, slots, rates, and maintenance operations implemented |
 
 The database tables are not API resources until backend routes and operations
 are implemented for them.
@@ -244,6 +244,100 @@ Example response:
 
 An unknown area returns `404 PARKING_AREA_NOT_FOUND`. Database failures
 return `503 DATABASE_UNAVAILABLE`.
+
+### `GET /api/admin/users`
+
+Returns all registered users with their account ID, username, name, email,
+phone, role (`user` or `admin`), `is_active` status, and UTC creation timestamp.
+Requires an authenticated bearer session with the `admin` role. Non-administrators
+receive `403 FORBIDDEN`.
+
+### `PUT /api/admin/users/{user_id}/role`
+
+Updates a user's role to `'user'` or `'admin'`. Administrators are prevented
+from changing their own role (`400 CANNOT_MODIFY_OWN_ADMIN_ACCESS`).
+
+### `PUT /api/admin/users/{user_id}/status`
+
+Updates a user's `is_active` status. Inactive accounts cannot log in. Administrators
+are prevented from deactivating their own account (`400 CANNOT_MODIFY_OWN_ADMIN_ACCESS`).
+
+### `GET /api/admin/parking-areas`
+
+Returns all parking areas with their current `slot_count`.
+
+### `POST /api/admin/parking-areas`
+
+Creates a new parking area. Requires `name` (1-150 chars), `location`, non-negative
+`capacity`, and `status` (`active`, `inactive`, or `closed`). `operating_hours`,
+`latitude`, and `longitude` are optional. Returns `201 Created`.
+
+### `PUT /api/admin/parking-areas/{area_id}`
+
+Updates an existing parking area's details and configuration.
+
+### `DELETE /api/admin/parking-areas/{area_id}`
+
+Deletes a parking area. If the area still contains slots or rate rules, returns
+`409 AREA_IN_USE`.
+
+### `GET /api/admin/parking-areas/{area_id}/slots`
+
+Returns all parking slots belonging to the specified area, including slot number,
+allowed vehicle type, slot type, EV flag, and status.
+
+### `POST /api/admin/parking-areas/{area_id}/slots`
+
+Adds a slot to the area. Requires `slot_number`, `vehicle_type` (`car`, `bike`,
+`scooter`, `truck`, `bus`, `other`), `slot_type`, `is_ev`, and `status`. Returns
+`409 DUPLICATE_SLOT_NUMBER` if a slot with the same number exists in the area.
+
+### `PUT /api/admin/parking-slots/{slot_id}`
+
+Updates slot properties or marks a slot as `available`, `reserved`, `occupied`,
+`maintenance`, or `unavailable`.
+
+### `DELETE /api/admin/parking-slots/{slot_id}`
+
+Deletes a parking slot. Returns `409 SLOT_IN_USE` if the slot currently has an
+active parking assignment or in-progress session.
+
+### `GET /api/admin/parking-rates`
+
+Lists all pricing rules across all areas, detailing `hourly_rate`, `overstay_rate`,
+and `ev_charging_rate`.
+
+### `POST /api/admin/parking-rates`
+
+Defines a rate rule for an area, vehicle type, and slot type. Returns `409
+DUPLICATE_RATE` if a rate for the same combination already exists.
+
+### `PUT /api/admin/parking-rates/{rate_id}`
+
+Updates hourly, overstay, or EV charging rates for a rate rule.
+
+### `DELETE /api/admin/parking-rates/{rate_id}`
+
+Deletes a rate rule.
+
+### `GET /api/admin/maintenance`
+
+Lists all maintenance records with enriched `slot_number` and `area_name` values,
+sorted newest first.
+
+### `POST /api/admin/maintenance`
+
+Schedules a maintenance window for a slot. Requires `slot_id`, `reason`,
+`start_time` (ISO-8601), optional `end_time` (ISO-8601), and `status` (`scheduled`,
+`in_progress`, `completed`, or `cancelled`).
+
+### `PUT /api/admin/maintenance/{maintenance_id}`
+
+Updates an existing maintenance record.
+
+### `DELETE /api/admin/maintenance/{maintenance_id}`
+
+Removes a maintenance record.
 
 ## Frontend usage
 

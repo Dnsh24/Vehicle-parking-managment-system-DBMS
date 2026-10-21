@@ -31,9 +31,25 @@ add_executable(parking_backend
     src/auth/auth.h
     src/api/parking_responses.h
     src/api/vehicle_responses.h
+    src/api/admin_responses.h
     src/config/config.cpp
     src/database/database.cpp
     src/validation/validation.cpp
+    src/routes/route_helpers.cpp
+    src/routes/route_helpers.h
+    src/routes/auth_routes.cpp
+    src/routes/auth_routes.h
+    src/routes/parking_routes.cpp
+    src/routes/parking_routes.h
+    src/routes/vehicle_routes.cpp
+    src/routes/vehicle_routes.h
+    src/routes/admin_routes.cpp
+    src/routes/admin_routes.h
+)
+
+target_include_directories(parking_backend
+    PRIVATE
+    src
 )
 
 target_link_libraries(parking_backend
@@ -96,4 +112,17 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME auth_tests COMMAND auth_tests)
+
+    add_executable(admin_tests
+        tests/admin_tests.cpp
+        src/api/admin_responses.h
+    )
+
+    target_link_libraries(admin_tests
+        PRIVATE
+        Crow::Crow
+    )
+
+    add_test(NAME admin_tests COMMAND admin_tests)
 endif()
+

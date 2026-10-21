@@ -57,3 +57,4 @@ BackendConfig BackendConfig::fromEnvironment()
         getEnvironmentValue("PARKING_DB_PASSWORD"),
         getPort("PARKING_SERVER_PORT", "3000")};
 }
+
