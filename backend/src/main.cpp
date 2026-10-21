@@ -5,6 +5,7 @@
 #include "routes/admin_routes.h"
 #include "routes/auth_routes.h"
 #include "routes/parking_routes.h"
+#include "routes/reservation_routes.h"
 #include "routes/vehicle_routes.h"
 
 #include <cstdlib>
@@ -85,6 +86,7 @@ int main()
     routes::registerParkingRoutes(app, database, database_check, config.database_name);
     routes::registerAuthRoutes(app, database);
     routes::registerVehicleRoutes(app, database);
+    routes::registerReservationRoutes(app, database);
     routes::registerAdminRoutes(app, database);
 
     std::cout << "Server running on http://localhost:" << config.server_port << std::endl;

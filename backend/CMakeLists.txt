@@ -41,6 +41,8 @@ add_executable(parking_backend
     src/routes/auth_routes.h
     src/routes/parking_routes.cpp
     src/routes/parking_routes.h
+    src/routes/reservation_routes.cpp
+    src/routes/reservation_routes.h
     src/routes/vehicle_routes.cpp
     src/routes/vehicle_routes.h
     src/routes/admin_routes.cpp

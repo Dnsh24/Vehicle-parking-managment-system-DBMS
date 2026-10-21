@@ -7,6 +7,7 @@ const vehicleList = document.getElementById("vehicleList");
 const vehicleMessage = document.getElementById("vehicleMessage");
 const saveVehicleButton = document.getElementById("saveVehicleButton");
 const cancelVehicleEdit = document.getElementById("cancelVehicleEdit");
+const vehicleAfterAddField = document.getElementById("vehicleAfterAddField");
 
 function setVehicleMessage(message, isError = false) {
     if (!vehicleMessage) return;
@@ -20,6 +21,7 @@ function resetVehicleForm() {
     vehicleForm.elements.vehicle_id.value = "";
     if (saveVehicleButton) saveVehicleButton.textContent = "Add vehicle";
     if (cancelVehicleEdit) cancelVehicleEdit.hidden = true;
+    if (vehicleAfterAddField) vehicleAfterAddField.hidden = false;
 }
 
 function renderVehicles(vehicles) {
@@ -99,6 +101,9 @@ async function loadVehicles() {
         }
         renderVehicles(data.vehicles);
         setVehicleMessage("");
+        if (typeof updateReservationVehicleOptions === "function") {
+            updateReservationVehicleOptions(data.vehicles);
+        }
     } catch (error) {
         vehicleList.replaceChildren();
         setVehicleMessage(error.message, true);
@@ -110,6 +115,7 @@ if (vehicleForm) {
         event.preventDefault();
         setVehicleMessage("");
         const vehicleId = vehicleForm.elements.vehicle_id.value;
+        const afterAddAction = vehicleForm.elements.after_add_action.value;
         const values = {
             registration_number: vehicleForm.elements.registration_number.value,
             vehicle_type: vehicleForm.elements.vehicle_type.value,
@@ -132,7 +138,18 @@ if (vehicleForm) {
             await loadVehicles();
             setVehicleMessage(vehicleId ? "Vehicle updated." : "Vehicle added.");
             if (!vehicleId && data.vehicle?.vehicle_id) {
-                await showAvailableSlots(data.vehicle.vehicle_id);
+                if (afterAddAction === "park") {
+                    await showAvailableSlots(data.vehicle.vehicle_id);
+                } else {
+                    if (reservationVehicle) {
+                        reservationVehicle.value = String(data.vehicle.vehicle_id);
+                    }
+                    if (reservationSearchForm) {
+                        reservationSearchForm.scrollIntoView({ behavior: "smooth", block: "center" });
+                        reservationSearchForm.elements.start_time.focus({ preventScroll: true });
+                    }
+                    setVehicleMessage("Vehicle added. Choose a reservation time and search for a slot.");
+                }
             }
         } catch (error) {
             setVehicleMessage(error.message, true);
@@ -203,6 +220,7 @@ if (vehicleList) {
                 vehicleForm.elements.is_electric.checked = vehicle.is_electric;
                 if (saveVehicleButton) saveVehicleButton.textContent = "Save changes";
                 if (cancelVehicleEdit) cancelVehicleEdit.hidden = false;
+                if (vehicleAfterAddField) vehicleAfterAddField.hidden = true;
                 vehicleForm.elements.registration_number.focus();
                 setVehicleMessage(`Editing ${vehicle.registration_number}.`);
             } catch (error) {
@@ -345,4 +363,3 @@ async function parkVehicleInSlot(vehicleId, slotId) {
         setVehicleMessage(error.message, true);
     }
 }
-

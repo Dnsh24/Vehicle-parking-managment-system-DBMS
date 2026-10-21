@@ -149,6 +149,7 @@ function showAuthenticatedUser(user, openAdminDirectly = false) {
 
     if (typeof loadAreas === "function") loadAreas();
     if (typeof loadVehicles === "function") loadVehicles();
+    if (typeof loadReservationPage === "function") loadReservationPage();
 }
 
 passwordToggles.forEach((toggle) => {
@@ -256,4 +257,3 @@ async function restoreSession() {
         showAuthError("The backend could not be reached. Please try again.");
     }
 }
-

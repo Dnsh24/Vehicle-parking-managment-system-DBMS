@@ -102,6 +102,12 @@
             <input name="is_electric" type="checkbox" />
             Electric vehicle (required for EV charging slots)
           </label>
+          <label class="vehicle-after-add" id="vehicleAfterAddField">After adding
+            <select name="after_add_action">
+              <option value="reserve">Reserve a slot</option>
+              <option value="park">Choose a slot to park now</option>
+            </select>
+          </label>
           <div class="vehicle-form-actions">
             <button class="refresh-button" id="saveVehicleButton" type="submit">Add vehicle</button>
             <button class="vehicle-cancel" id="cancelVehicleEdit" type="button" hidden>Cancel edit</button>
@@ -109,6 +115,58 @@
         </form>
         <div class="vehicle-list" id="vehicleList" aria-live="polite">
           <p class="muted">Loading your vehicles...</p>
+        </div>
+      </section>
+
+      <section class="reservations-panel panel" aria-labelledby="reservationsTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Search and reserve</p>
+            <h2 id="reservationsTitle">Find a parking slot</h2>
+            <p class="muted">Availability is checked for your vehicle and requested time.</p>
+          </div>
+        </div>
+        <p class="reservation-message" id="reservationMessage" role="status" aria-live="polite"></p>
+        <form class="reservation-form" id="reservationSearchForm">
+          <label>Vehicle
+            <select name="vehicle_id" id="reservationVehicle" required>
+              <option value="">Choose a vehicle</option>
+            </select>
+          </label>
+          <label>Parking area
+            <select name="area_id" id="reservationArea">
+              <option value="">All active areas</option>
+            </select>
+          </label>
+          <label>Location
+            <input name="location" type="search" maxlength="120" placeholder="Area or location" />
+          </label>
+          <label>Slot type
+            <input name="slot_type" type="text" maxlength="30" placeholder="Any slot type" />
+          </label>
+          <label>Start time
+            <input name="start_time" id="reservationStartTime" type="datetime-local" required />
+          </label>
+          <label>End time
+            <input name="end_time" id="reservationEndTime" type="datetime-local" required />
+          </label>
+          <label class="reservation-ev-filter">
+            <input name="ev_only" type="checkbox" />
+            EV charging only
+          </label>
+          <button class="refresh-button" type="submit">Search availability</button>
+        </form>
+        <div class="reservation-results" id="reservationResults" aria-live="polite">
+          <p class="muted">Choose a vehicle and time to search for available slots.</p>
+        </div>
+        <div class="reservation-history">
+          <div class="reservation-history-heading">
+            <h3>Your reservations</h3>
+            <button class="vehicle-cancel" id="refreshReservationsButton" type="button">Refresh</button>
+          </div>
+          <div class="reservation-list" id="reservationList" aria-live="polite">
+            <p class="muted">Loading reservations...</p>
+          </div>
         </div>
       </section>
 
@@ -496,6 +554,7 @@
     <script src="js/auth.js"></script>
     <script src="js/parking.js"></script>
     <script src="js/vehicles.js"></script>
+    <script src="js/reservations.js"></script>
     <script src="js/admin.js"></script>
     <script src="js/app.js"></script>
   </body>

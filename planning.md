@@ -20,6 +20,8 @@
 - Phase 2 authentication: registration, login, logout, sessions, and profiles
 - Phase 3 vehicle management: authenticated vehicle CRUD, EV-compatible slot
   selection, parking, checkout, map display, and live end-to-end verification
+- Phase 5 search and reservations: backend, frontend, unit tests, and
+  user-verified end-to-end flow completed
 - PostgreSQL schema with 14 core tables, constraints, and indexes
 
 ### In progress
@@ -126,7 +128,9 @@ Reservation creation must validate ownership, time range, compatibility,
 availability, and maintenance state. It must use a transaction to prevent
 conflicting bookings.
 
-**Status:** Planned. The `reservations` table exists only.
+**Status:** Completed. Availability search, owner-scoped reservation
+creation/list/details/cancellation, transaction-protected conflict checks, and
+the end-to-end user flow are working. The user verified the running application.
 
 ### Reservation expiry
 
@@ -347,11 +351,15 @@ References: Section 4; related tables in [database.md](database.md).
 
 #### Phase 5: Search and reservations
 
+**Status:** Completed. Backend build and unit tests pass, and the user verified
+the end-to-end flow against the running application.
+
 - Backend: filtered availability, reservation creation, listing, details,
-  cancellation, and conflict protection.
+  cancellation, and transaction-protected conflict checks.
 - Frontend: filters, reservation form, confirmation, status, and cancellation.
-- Test ownership, compatibility, time ranges, overlapping reservations, and
-  concurrent requests.
+- Validate ownership, compatibility, future ISO-8601 time ranges, overlapping
+  reservations, and concurrent requests. Reservation creation locks the
+  selected slot within a transaction to prevent concurrent conflicting claims.
 
 References: `reservations`, `parking_slots`, and `parking_rates` in
 [database.md](database.md).

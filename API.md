@@ -3,16 +3,17 @@
 ## Current status
 
 The API includes authentication, profiles, owner-scoped vehicle management,
-and read-only parking-availability resources.
+parking availability, and Phase 5 reservation operations.
 
 | Component | Current status |
 | --- | --- |
 | Crow backend | Implemented with multi-threaded routing |
-| REST endpoints | Health, parking availability, vehicles, and administrator endpoints implemented |
+| REST endpoints | Health, parking availability, vehicles, reservations, and administrator endpoints implemented |
 | PostgreSQL through C++ | libpqxx parameterized queries and transactions |
-| Frontend API integration | Authentication, parking availability, vehicle management, and admin console |
+| Frontend API integration | Authentication, parking availability, vehicle and reservation management, and admin console |
 | Authentication and authorization | Bearer sessions with role-based access (`user`, `admin`) |
 | Vehicle management | Authenticated CRUD and parking assignments implemented |
+| Reservations | Availability filters, transactional booking, owner-scoped listing/details, and cancellation |
 | Administrator management | Users, areas, slots, rates, and maintenance operations implemented |
 
 The database tables are not API resources until backend routes and operations
@@ -108,6 +109,10 @@ occupied and records the active assignment. EV charging slots require the
 vehicle to be marked electric. A slot that is no longer available, is inactive,
 or is incompatible returns `409 PARKING_SLOT_UNAVAILABLE`.
 
+Slots with any pending, confirmed, or active reservation that has not ended are
+not eligible for direct parking, so a future reservation cannot be displaced
+by a manual assignment.
+
 The response contains a `parking` object with the assignment, vehicle, slot,
 area, and parking start time. An active slot remains occupied until checkout.
 This direct assignment tracks occupancy only; it does not create a reservation
@@ -140,6 +145,55 @@ VEHICLE_NOT_FOUND`. An actively parked vehicle returns `409
 VEHICLE_CURRENTLY_PARKED` and must be checked out first. After checkout,
 deletion permanently removes the vehicle and its associated assignments,
 reservations, sessions, payments, and receipts in one database transaction.
+
+### `GET /api/reservations/availability`
+
+Searches active parking areas for slots compatible with the authenticated
+user's vehicle and requested time. Required query parameters are `vehicle_id`,
+`start_time`, and `end_time`; timestamps must be future ISO-8601 values with a
+timezone offset. Optional filters are `area_id`, `location` (matches area name
+or location), `slot_type`, and `ev_only=true`. Results include slot and area
+details and include `hourly_rate` when a matching rate is configured.
+
+Slots must be active, available, vehicle-compatible, and free of active
+parking or overlapping pending, confirmed, or active reservations. Time
+intervals use half-open boundaries, so one reservation may start exactly when
+another ends. Scheduled or in-progress maintenance is excluded for the
+requested interval. Requests for another user's vehicle return no results.
+
+### `POST /api/reservations`
+
+Creates a confirmed reservation for the authenticated user. The JSON body
+requires positive `vehicle_id` and `slot_id` values plus future ISO-8601
+`start_time` and `end_time` values with timezone offsets. The operation checks
+vehicle ownership, time order, vehicle/slot compatibility, area and slot
+status, current parking, and overlapping reservations inside a transaction
+while locking the selected slot.
+The operation also rejects slots with scheduled or in-progress maintenance
+during any part of the requested interval.
+
+Returns `201 Created` with a `reservation` object containing its ID, vehicle,
+slot, area, time range, status, and configured hourly rate when available.
+Invalid timestamps return `400 INVALID_TIME_RANGE`; an unknown or unowned
+vehicle returns `404 VEHICLE_NOT_FOUND`; a vehicle or slot conflict returns
+`409 VEHICLE_UNAVAILABLE` or `409 PARKING_SLOT_UNAVAILABLE`.
+
+### `GET /api/reservations`
+
+Returns the authenticated user's reservations, newest start time first. Other
+users' reservations are never included.
+
+### `GET /api/reservations/{reservation_id}`
+
+Returns the requested reservation only when it belongs to the authenticated
+user. Unknown and unowned reservation IDs both return `404
+RESERVATION_NOT_FOUND`.
+
+### `DELETE /api/reservations/{reservation_id}`
+
+Cancels an owned reservation with status `pending` or `confirmed` and returns
+its ID with status `cancelled`. Active, completed, expired, or already
+cancelled reservations return `409 RESERVATION_NOT_CANCELLABLE`.
 
 ### `GET /api/hello`
 

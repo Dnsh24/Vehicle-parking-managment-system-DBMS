@@ -7,11 +7,11 @@ frontend, a C++ backend using Crow, and a PostgreSQL database.
 
 | Component | Status |
 | --- | --- |
-| Frontend | Authentication, parking availability, and vehicle parking/checkout UI implemented. |
+| Frontend | Authentication, parking availability, vehicle parking/checkout, and reservation search/management UI implemented. |
 | PostgreSQL | Schema implemented with 14 core tables, constraints, and indexes. See [database.md](database.md). |
-| C++ backend | Crow server with PostgreSQL access, bearer authentication, parking availability, vehicle CRUD, and direct parking assignments. |
-| REST API | Health, authentication, profile, parking availability, and vehicle-management endpoints are implemented. |
-| Frontend-backend integration | Browser `fetch` integration targets `http://localhost:3000`. |
+| C++ backend | Crow server with PostgreSQL access, bearer authentication, parking availability, vehicle CRUD, direct parking assignments, and transactional reservations. |
+| REST API | Health, authentication, profile, parking availability, vehicle, reservation, and administrator endpoints are implemented. |
+| Frontend-backend integration | Browser `fetch` integration targets `http://localhost:3000`; Phase 5 reservation flow verified end to end. |
 
 The database schema does not by itself mean that the corresponding user-facing
 features or CRUD operations are implemented.
@@ -43,9 +43,9 @@ HTML/CSS/JavaScript frontend
 ```
 
 Authentication, profiles, parking availability, vehicle management with
-manual slot assignment and checkout, and basic administrator management &
-maintenance are implemented. Reservations, payments, QR processing, and the
-remaining application APIs are planned rather than complete.
+manual slot assignment and checkout, basic administrator management &
+maintenance, and Phase 5 reservation flows are implemented. Payments, QR
+processing, and the remaining application APIs are planned rather than complete.
 
 ## Implemented features
 
@@ -55,6 +55,8 @@ remaining application APIs are planned rather than complete.
 - Loads parking-area and slot availability.
 - Adds and edits vehicles, shows compatible available slots, and parks a
   selected vehicle until checkout.
+- Searches compatible slots by vehicle, area, location, slot type, EV charging,
+  and requested time; creates, views, and cancels reservations.
 - Administrator console with user role/status controls, area management, slot
   configuration, pricing rates, and maintenance scheduling.
 - Uses bearer-authenticated requests to the backend at port 3000.
@@ -67,6 +69,8 @@ remaining application APIs are planned rather than complete.
 - Provides bearer-session authentication and profile operations.
 - Loads parking areas and slots from PostgreSQL.
 - Provides owner-scoped vehicle CRUD, compatible-slot selection, and checkout.
+- Provides owner-scoped availability search and transaction-protected reservation
+  creation, listing, details, and cancellation.
 - Atomically claims/releases parking slots and persists assignment history.
 - Provides administrator operations for users, areas, slots, rates, and maintenance
   with role-based access control (`admin` role enforcement).
@@ -82,8 +86,7 @@ remaining application APIs are planned rather than complete.
 The following are described in [planning.md](planning.md) but are not yet
 implemented as complete application functionality:
 
-- Reservation-based availability and slot allocation
-- Reservations and reservation expiry
+- Reservation expiry
 - QR-based check-in and vehicle entry
 - Parking sessions, exit processing, and overstay calculation
 - Fee calculation, payments, and digital receipts

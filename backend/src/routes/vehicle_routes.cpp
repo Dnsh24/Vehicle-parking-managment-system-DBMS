@@ -183,60 +183,27 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 return api::errorResponse(400, "INVALID_SLOT_ID", "slot_id must be a positive integer.");
             }
             const std::int64_t slot_id = body["slot_id"].i();
-            const pqxx::result vehicle_rows = database.executeRead(
-                "SELECT vehicle_id FROM vehicles WHERE vehicle_id = $1 AND user_id = $2",
-                pqxx::params{vehicle_id, user->user_id});
-            if (vehicle_rows.empty())
+            const VehicleParkingResult result = database.parkVehicle(
+                user->user_id,
+                vehicle_id,
+                slot_id);
+            if (result.status == VehicleParkingStatus::vehicle_not_found)
             {
                 return api::errorResponse(404, "VEHICLE_NOT_FOUND", "The requested vehicle does not exist.");
             }
-
-            const pqxx::result rows = database.executeWrite(
-                "WITH claimed AS ("
-                "UPDATE parking_slots ps SET status = 'occupied' "
-                "FROM vehicles v, parking_areas pa "
-                "WHERE ps.slot_id = $1 "
-                "AND (ps.status = 'available' OR ps.status IN ('occupied', 'reserved')) "
-                "AND v.vehicle_id = $2 AND v.user_id = $3 "
-                "AND ps.vehicle_type = v.vehicle_type "
-                "AND (NOT ps.is_ev OR v.is_electric) "
-                "AND pa.area_id = ps.area_id AND pa.status = 'active' "
-                "AND NOT EXISTS (SELECT 1 FROM reservations r "
-                "WHERE r.slot_id = ps.slot_id AND r.status IN ('pending', 'confirmed', 'active') "
-                "AND r.start_time <= CURRENT_TIMESTAMP AND r.end_time > CURRENT_TIMESTAMP) "
-                "AND NOT EXISTS (SELECT 1 FROM parking_sessions s "
-                "WHERE s.slot_id = ps.slot_id AND s.exit_time IS NULL "
-                "AND s.status IN ('active', 'overstayed')) "
-                "AND NOT EXISTS (SELECT 1 FROM parking_assignments a "
-                "WHERE a.vehicle_id = v.vehicle_id AND a.checkout_at IS NULL) "
-                "AND NOT EXISTS (SELECT 1 FROM parking_sessions s "
-                "WHERE s.vehicle_id = v.vehicle_id AND s.exit_time IS NULL "
-                "AND s.status IN ('active', 'overstayed')) "
-                "RETURNING ps.slot_id"
-                "), assigned AS ("
-                "INSERT INTO parking_assignments (user_id, vehicle_id, slot_id) "
-                "SELECT $3, $2, slot_id FROM claimed "
-                "RETURNING assignment_id, vehicle_id, slot_id, parked_at"
-                ") "
-                "SELECT assigned.assignment_id, assigned.vehicle_id, assigned.slot_id, "
-                "assigned.parked_at, ps.slot_number, ps.area_id, pa.name AS area_name "
-                "FROM assigned "
-                "JOIN parking_slots ps ON ps.slot_id = assigned.slot_id "
-                "JOIN parking_areas pa ON pa.area_id = ps.area_id",
-                pqxx::params{slot_id, vehicle_id, user->user_id});
-            if (rows.empty())
+            if (result.status == VehicleParkingStatus::slot_unavailable)
             {
                 return api::errorResponse(409, "PARKING_SLOT_UNAVAILABLE", "The slot is no longer available or is incompatible with this vehicle.");
             }
 
             crow::json::wvalue response;
-            response["parking"]["assignment_id"] = rows[0]["assignment_id"].as<std::int64_t>();
-            response["parking"]["vehicle_id"] = rows[0]["vehicle_id"].as<std::int64_t>();
-            response["parking"]["slot_id"] = rows[0]["slot_id"].as<std::int64_t>();
-            response["parking"]["area_id"] = rows[0]["area_id"].as<std::int64_t>();
-            response["parking"]["slot_number"] = rows[0]["slot_number"].c_str();
-            response["parking"]["area_name"] = rows[0]["area_name"].c_str();
-            response["parking"]["parked_at"] = rows[0]["parked_at"].c_str();
+            response["parking"]["assignment_id"] = result.assignment_id;
+            response["parking"]["vehicle_id"] = vehicle_id;
+            response["parking"]["slot_id"] = result.slot_id;
+            response["parking"]["area_id"] = result.area_id;
+            response["parking"]["slot_number"] = result.slot_number;
+            response["parking"]["area_name"] = result.area_name;
+            response["parking"]["parked_at"] = result.parked_at;
             return crow::response(201, response);
         }
         catch (const pqxx::unique_violation &)
@@ -453,4 +420,3 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
 }
 
 } // namespace routes
-
