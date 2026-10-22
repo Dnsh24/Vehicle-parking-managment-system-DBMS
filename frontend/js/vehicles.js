@@ -44,7 +44,7 @@ function renderVehicles(vehicles) {
         registration.textContent = vehicle.registration_number;
         const description = document.createElement("p");
         const type = vehicle.vehicle_type[0].toUpperCase() + vehicle.vehicle_type.slice(1);
-        description.textContent = `${type}${vehicle.is_electric ? " · Electric" : ""}`;
+        description.textContent = `${type}${vehicle.is_electric ? " · Electric" : ""}${vehicle.needs_accessible_parking ? " · Handicapped parking required" : ""}`;
         details.append(registration, description);
         if (vehicle.parking) {
             const parking = document.createElement("p");
@@ -119,7 +119,8 @@ if (vehicleForm) {
         const values = {
             registration_number: vehicleForm.elements.registration_number.value,
             vehicle_type: vehicleForm.elements.vehicle_type.value,
-            is_electric: vehicleForm.elements.is_electric.checked
+            is_electric: vehicleForm.elements.is_electric.checked,
+            needs_accessible_parking: vehicleForm.elements.needs_accessible_parking.checked
         };
         try {
             const response = await fetch(
@@ -143,6 +144,7 @@ if (vehicleForm) {
                 } else {
                     if (reservationVehicle) {
                         reservationVehicle.value = String(data.vehicle.vehicle_id);
+                        reservationVehicle.dispatchEvent(new Event("change"));
                     }
                     if (reservationSearchForm) {
                         reservationSearchForm.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -218,6 +220,7 @@ if (vehicleList) {
                 vehicleForm.elements.registration_number.value = vehicle.registration_number;
                 vehicleForm.elements.vehicle_type.value = vehicle.vehicle_type;
                 vehicleForm.elements.is_electric.checked = vehicle.is_electric;
+                vehicleForm.elements.needs_accessible_parking.checked = vehicle.needs_accessible_parking;
                 if (saveVehicleButton) saveVehicleButton.textContent = "Save changes";
                 if (cancelVehicleEdit) cancelVehicleEdit.hidden = false;
                 if (vehicleAfterAddField) vehicleAfterAddField.hidden = true;
@@ -307,7 +310,11 @@ async function showAvailableSlots(vehicleId) {
                 choice.className = "slot-choice";
                 choice.dataset.slotId = slot.slot_id;
                 choice.dataset.vehicleId = vehicleId;
-                choice.textContent = `${slot.area_name} · ${slot.slot_number}${slot.is_ev ? " · EV charging" : ""}`;
+                const features = [
+                    slot.is_ev || /\bev\b|electric|charg/i.test(slot.slot_type) ? "EV charging" : "",
+                    /handicap|accessible/i.test(slot.slot_type) ? "Handicapped" : ""
+                ].filter(Boolean);
+                choice.textContent = `${slot.area_name} · ${slot.slot_number}${features.length ? ` · ${features.join(" · ")}` : ""}`;
                 options.append(choice);
             });
         }

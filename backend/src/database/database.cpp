@@ -142,7 +142,7 @@ ReservationCreationResult Database::createReservation(
     pqxx::work transaction(connection);
 
     const pqxx::result vehicle = transaction.exec_params(
-        "SELECT vehicle_type, is_electric FROM vehicles "
+        "SELECT vehicle_type, is_electric, needs_accessible_parking FROM vehicles "
         "WHERE vehicle_id = $1 AND user_id = $2 FOR UPDATE",
         vehicle_id,
         user_id);
@@ -162,7 +162,10 @@ ReservationCreationResult Database::createReservation(
     }
 
     const pqxx::result slot = transaction.exec_params(
-        "SELECT ps.slot_id, ps.vehicle_type, ps.is_ev, ps.status, pa.status AS area_status "
+        "SELECT ps.slot_id, ps.vehicle_type, "
+        "(ps.slot_type ILIKE '%handicap%' OR ps.slot_type ILIKE '%accessible%') AS is_accessible, "
+        "(ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' OR ps.slot_type ILIKE '%electric%' "
+        "OR ps.slot_type ILIKE '%charg%') AS is_ev, ps.status, pa.status AS area_status "
         "FROM parking_slots ps "
         "JOIN parking_areas pa ON pa.area_id = ps.area_id "
         "WHERE ps.slot_id = $1 FOR UPDATE OF ps",
@@ -172,7 +175,9 @@ ReservationCreationResult Database::createReservation(
         slot[0]["area_status"].as<std::string>() != "active" ||
         slot[0]["vehicle_type"].as<std::string>() !=
             vehicle[0]["vehicle_type"].as<std::string>() ||
-        (slot[0]["is_ev"].as<bool>() && !vehicle[0]["is_electric"].as<bool>()))
+        (slot[0]["is_ev"].as<bool>() && !vehicle[0]["is_electric"].as<bool>()) ||
+        (slot[0]["is_accessible"].as<bool>() &&
+         !vehicle[0]["needs_accessible_parking"].as<bool>()))
     {
         return {ReservationCreationStatus::slot_unavailable};
     }
@@ -239,6 +244,131 @@ ReservationCreationResult Database::createReservation(
         inserted[0]["reservation_id"].as<std::int64_t>()};
 }
 
+ReservationCheckInResult Database::checkInReservation(
+    std::int64_t user_id,
+    std::int64_t reservation_id) const
+{
+    pqxx::connection connection = createConnection();
+    pqxx::work transaction(connection);
+
+    const pqxx::result reservation = transaction.exec_params(
+        "SELECT vehicle_id, slot_id, start_time, end_time, status "
+        "FROM reservations WHERE reservation_id = $1 AND user_id = $2 FOR UPDATE",
+        reservation_id,
+        user_id);
+    if (reservation.empty())
+    {
+        return {ReservationCheckInStatus::not_found};
+    }
+    if (reservation[0]["status"].as<std::string>() != "confirmed")
+    {
+        return {ReservationCheckInStatus::not_confirmed};
+    }
+
+    const std::int64_t vehicle_id = reservation[0]["vehicle_id"].as<std::int64_t>();
+    const std::int64_t slot_id = reservation[0]["slot_id"].as<std::int64_t>();
+    const pqxx::result vehicle = transaction.exec_params(
+        "SELECT needs_accessible_parking FROM vehicles WHERE vehicle_id = $1 FOR UPDATE",
+        vehicle_id);
+    if (vehicle.empty())
+    {
+        return {ReservationCheckInStatus::vehicle_unavailable};
+    }
+
+    const pqxx::result slot = transaction.exec_params(
+        "SELECT ps.status, "
+        "(ps.slot_type ILIKE '%handicap%' OR ps.slot_type ILIKE '%accessible%') AS is_accessible, "
+        "pa.status AS area_status "
+        "FROM parking_slots ps "
+        "JOIN parking_areas pa ON pa.area_id = ps.area_id "
+        "WHERE ps.slot_id = $1 FOR UPDATE OF ps",
+        slot_id);
+    if (slot.empty() ||
+        (slot[0]["status"].as<std::string>() != "available" &&
+         slot[0]["status"].as<std::string>() != "reserved") ||
+        slot[0]["area_status"].as<std::string>() != "active" ||
+        (slot[0]["is_accessible"].as<bool>() &&
+         !vehicle[0]["needs_accessible_parking"].as<bool>()))
+    {
+        return {ReservationCheckInStatus::slot_unavailable};
+    }
+
+    const pqxx::result window = transaction.exec_params(
+        "SELECT statement_timestamp() < $1::timestamptz AS too_early, "
+        "statement_timestamp() >= $2::timestamptz AS expired",
+        reservation[0]["start_time"].as<std::string>(),
+        reservation[0]["end_time"].as<std::string>());
+    if (window[0]["too_early"].as<bool>())
+    {
+        return {ReservationCheckInStatus::too_early};
+    }
+    if (window[0]["expired"].as<bool>())
+    {
+        transaction.exec_params(
+            "UPDATE reservations SET status = 'expired' "
+            "WHERE reservation_id = $1 AND status = 'confirmed'",
+            reservation_id);
+        transaction.commit();
+        return {ReservationCheckInStatus::expired};
+    }
+
+    const pqxx::result conflicts = transaction.exec_params(
+        "SELECT EXISTS (SELECT 1 FROM parking_assignments "
+        "WHERE slot_id = $1 AND checkout_at IS NULL) "
+        "OR EXISTS (SELECT 1 FROM parking_sessions "
+        "WHERE slot_id = $1 AND exit_time IS NULL "
+        "AND status IN ('active', 'overstayed')) AS slot_unavailable, "
+        "EXISTS (SELECT 1 FROM parking_assignments "
+        "WHERE vehicle_id = $2 AND checkout_at IS NULL) "
+        "OR EXISTS (SELECT 1 FROM parking_sessions "
+        "WHERE vehicle_id = $2 AND exit_time IS NULL "
+        "AND status IN ('active', 'overstayed')) AS vehicle_unavailable",
+        slot_id,
+        vehicle_id);
+    if (conflicts[0]["vehicle_unavailable"].as<bool>())
+    {
+        return {ReservationCheckInStatus::vehicle_unavailable};
+    }
+    if (conflicts[0]["slot_unavailable"].as<bool>())
+    {
+        return {ReservationCheckInStatus::slot_unavailable};
+    }
+
+    const pqxx::result maintenance = transaction.exec_params(
+        "SELECT EXISTS (SELECT 1 FROM maintenance "
+        "WHERE slot_id = $1 AND status IN ('scheduled', 'in_progress') "
+        "AND start_time < $2::timestamptz "
+        "AND (end_time IS NULL OR end_time > statement_timestamp())) AS unavailable",
+        slot_id,
+        reservation[0]["end_time"].as<std::string>());
+    if (maintenance[0]["unavailable"].as<bool>())
+    {
+        return {ReservationCheckInStatus::slot_unavailable};
+    }
+
+    transaction.exec_params(
+        "UPDATE reservations SET status = 'active' "
+        "WHERE reservation_id = $1 AND user_id = $2 AND status = 'confirmed'",
+        reservation_id,
+        user_id);
+    transaction.exec_params(
+        "UPDATE parking_slots SET status = 'occupied' WHERE slot_id = $1",
+        slot_id);
+    const pqxx::result session = transaction.exec_params(
+        "INSERT INTO parking_sessions "
+        "(reservation_id, user_id, vehicle_id, slot_id, entry_time, status) "
+        "VALUES ($1, $2, $3, $4, clock_timestamp(), 'active') "
+        "RETURNING session_id",
+        reservation_id,
+        user_id,
+        vehicle_id,
+        slot_id);
+    transaction.commit();
+    return {
+        ReservationCheckInStatus::checked_in,
+        session[0]["session_id"].as<std::int64_t>()};
+}
+
 VehicleParkingResult Database::parkVehicle(
     std::int64_t user_id,
     std::int64_t vehicle_id,
@@ -248,7 +378,7 @@ VehicleParkingResult Database::parkVehicle(
     pqxx::work transaction(connection);
 
     const pqxx::result vehicle = transaction.exec_params(
-        "SELECT vehicle_type, is_electric FROM vehicles "
+        "SELECT vehicle_type, is_electric, needs_accessible_parking FROM vehicles "
         "WHERE vehicle_id = $1 AND user_id = $2 FOR UPDATE",
         vehicle_id,
         user_id);
@@ -258,7 +388,10 @@ VehicleParkingResult Database::parkVehicle(
     }
 
     const pqxx::result slot = transaction.exec_params(
-        "SELECT ps.slot_id, ps.area_id, ps.slot_number, ps.vehicle_type, ps.is_ev, "
+        "SELECT ps.slot_id, ps.area_id, ps.slot_number, ps.vehicle_type, "
+        "(ps.slot_type ILIKE '%handicap%' OR ps.slot_type ILIKE '%accessible%') AS is_accessible, "
+        "(ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' OR ps.slot_type ILIKE '%electric%' "
+        "OR ps.slot_type ILIKE '%charg%') AS is_ev, "
         "ps.status, pa.name AS area_name, pa.status AS area_status "
         "FROM parking_slots ps JOIN parking_areas pa ON pa.area_id = ps.area_id "
         "WHERE ps.slot_id = $1 FOR UPDATE OF ps",
@@ -269,7 +402,9 @@ VehicleParkingResult Database::parkVehicle(
          slot[0]["status"].as<std::string>() != "reserved") ||
         slot[0]["area_status"].as<std::string>() != "active" ||
         slot[0]["vehicle_type"].as<std::string>() != vehicle[0]["vehicle_type"].as<std::string>() ||
-        (slot[0]["is_ev"].as<bool>() && !vehicle[0]["is_electric"].as<bool>()))
+        (slot[0]["is_ev"].as<bool>() && !vehicle[0]["is_electric"].as<bool>()) ||
+        (slot[0]["is_accessible"].as<bool>() &&
+         !vehicle[0]["needs_accessible_parking"].as<bool>()))
     {
         return {VehicleParkingStatus::slot_unavailable};
     }

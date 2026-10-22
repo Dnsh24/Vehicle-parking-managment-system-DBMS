@@ -305,4 +305,3 @@ if (changeAreaButton) {
         window.alert("Mall Central floors are available in the floor selector.");
     });
 }
-

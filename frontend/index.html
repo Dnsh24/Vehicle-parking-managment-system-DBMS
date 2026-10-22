@@ -102,6 +102,10 @@
             <input name="is_electric" type="checkbox" />
             Electric vehicle (required for EV charging slots)
           </label>
+          <label class="vehicle-accessible">
+            <input name="needs_accessible_parking" type="checkbox" />
+            This vehicle needs handicapped parking
+          </label>
           <label class="vehicle-after-add" id="vehicleAfterAddField">After adding
             <select name="after_add_action">
               <option value="reserve">Reserve a slot</option>
@@ -152,7 +156,7 @@
           </label>
           <label class="reservation-ev-filter">
             <input name="ev_only" type="checkbox" />
-            EV charging only
+            EV charging spaces only (optional)
           </label>
           <button class="refresh-button" type="submit">Search availability</button>
         </form>
@@ -166,6 +170,14 @@
           </div>
           <div class="reservation-list" id="reservationList" aria-live="polite">
             <p class="muted">Loading reservations...</p>
+          </div>
+          <div class="reservation-history">
+            <div class="reservation-history-heading">
+              <h3>Active parking sessions</h3>
+            </div>
+            <div class="reservation-list" id="activeParkingSessions" aria-live="polite">
+              <p class="muted">Loading active sessions...</p>
+            </div>
           </div>
         </div>
       </section>

@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE vehicles
+    ADD COLUMN IF NOT EXISTS needs_accessible_parking BOOLEAN NOT NULL DEFAULT FALSE;
+
+COMMIT;

@@ -78,6 +78,37 @@ const std::string reservationDetailsQuery =
     "JOIN parking_areas pa ON pa.area_id = ps.area_id "
     "LEFT JOIN parking_rates pr ON pr.area_id = pa.area_id "
     "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type ";
+
+const std::string activeSessionDetailsQuery =
+    "SELECT s.session_id, s.reservation_id, s.vehicle_id, v.registration_number, "
+    "v.vehicle_type, s.slot_id, ps.slot_number, pa.name AS area_name, pa.location, "
+    "to_char(s.entry_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS entry_time, "
+    "to_char(r.end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS reserved_end_time, "
+    "s.status "
+    "FROM parking_sessions s "
+    "JOIN reservations r ON r.reservation_id = s.reservation_id "
+    "JOIN vehicles v ON v.vehicle_id = s.vehicle_id "
+    "JOIN parking_slots ps ON ps.slot_id = s.slot_id "
+    "JOIN parking_areas pa ON pa.area_id = ps.area_id ";
+
+template <typename Row>
+crow::json::wvalue parkingSessionJson(const Row &row)
+{
+    crow::json::wvalue session;
+    session["session_id"] = row["session_id"].template as<std::int64_t>();
+    session["reservation_id"] = row["reservation_id"].template as<std::int64_t>();
+    session["vehicle_id"] = row["vehicle_id"].template as<std::int64_t>();
+    session["registration_number"] = row["registration_number"].c_str();
+    session["vehicle_type"] = row["vehicle_type"].c_str();
+    session["slot_id"] = row["slot_id"].template as<std::int64_t>();
+    session["slot_number"] = row["slot_number"].c_str();
+    session["area_name"] = row["area_name"].c_str();
+    session["location"] = row["location"].c_str();
+    session["entry_time"] = row["entry_time"].c_str();
+    session["reserved_end_time"] = row["reserved_end_time"].c_str();
+    session["status"] = row["status"].c_str();
+    return session;
+}
 }
 
 namespace routes
@@ -134,7 +165,9 @@ void registerReservationRoutes(
 
             const pqxx::result rows = database.executeRead(
                 "SELECT ps.slot_id, ps.area_id, pa.name AS area_name, pa.location, "
-                "ps.slot_number, ps.vehicle_type, ps.slot_type, ps.is_ev, pr.hourly_rate "
+                "ps.slot_number, ps.vehicle_type, ps.slot_type, "
+                "(ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
+                "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') AS is_ev, pr.hourly_rate "
                 "FROM vehicles v "
                 "JOIN parking_slots ps ON ps.vehicle_type = v.vehicle_type "
                 "JOIN parking_areas pa ON pa.area_id = ps.area_id "
@@ -142,12 +175,16 @@ void registerReservationRoutes(
                 "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type "
                 "WHERE v.vehicle_id = $1 AND v.user_id = $2 "
                 "AND pa.status = 'active' AND ps.status = 'available' "
-                "AND (NOT ps.is_ev OR v.is_electric) "
+                "AND (NOT (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
+                "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') OR v.is_electric) "
+                "AND (v.needs_accessible_parking OR "
+                "(ps.slot_type NOT ILIKE '%handicap%' AND ps.slot_type NOT ILIKE '%accessible%')) "
                 "AND ($3 = 0 OR ps.area_id = $3) "
                 "AND ($4 = '' OR ps.slot_type = $4) "
                 "AND ($5 = '' OR pa.name ILIKE '%' || $5 || '%' "
                 "OR pa.location ILIKE '%' || $5 || '%') "
-                "AND (NOT $8::boolean OR ps.is_ev) "
+                "AND (NOT $8::boolean OR (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
+                "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%')) "
                 "AND NOT EXISTS (SELECT 1 FROM parking_assignments a "
                 "WHERE a.slot_id = ps.slot_id AND a.checkout_at IS NULL) "
                 "AND NOT EXISTS (SELECT 1 FROM parking_sessions s "
@@ -291,6 +328,81 @@ void registerReservationRoutes(
         {
             std::cerr << "Reservation creation failed: " << exception.what() << std::endl;
             return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The reservation could not be created.");
+        } });
+
+    CROW_ROUTE(app, "/api/reservations/<uint>/check-in").methods(crow::HTTPMethod::POST)
+    ([&database](const crow::request &request, unsigned int reservation_id)
+     {
+        try
+        {
+            const auto user = findAuthenticatedUser(database, request);
+            if (!user)
+            {
+                return unauthorized();
+            }
+
+            const ReservationCheckInResult result = database.checkInReservation(
+                user->user_id,
+                static_cast<std::int64_t>(reservation_id));
+            switch (result.status)
+            {
+            case ReservationCheckInStatus::not_found:
+                return api::errorResponse(404, "RESERVATION_NOT_FOUND", "The requested reservation does not exist.");
+            case ReservationCheckInStatus::not_confirmed:
+                return api::errorResponse(409, "RESERVATION_NOT_CHECK_IN_ELIGIBLE", "Only confirmed reservations can be checked in.");
+            case ReservationCheckInStatus::too_early:
+                return api::errorResponse(409, "CHECK_IN_NOT_OPEN", "Check-in opens at the reservation start time.");
+            case ReservationCheckInStatus::expired:
+                return api::errorResponse(409, "RESERVATION_EXPIRED", "The reservation end time has passed.");
+            case ReservationCheckInStatus::slot_unavailable:
+                return api::errorResponse(409, "PARKING_SLOT_UNAVAILABLE", "The reserved slot is unavailable or under maintenance.");
+            case ReservationCheckInStatus::vehicle_unavailable:
+                return api::errorResponse(409, "VEHICLE_UNAVAILABLE", "The vehicle already has an active parking session or assignment.");
+            case ReservationCheckInStatus::checked_in:
+                break;
+            }
+
+            const pqxx::result rows = database.executeRead(
+                activeSessionDetailsQuery + "WHERE s.session_id = $1 AND s.user_id = $2",
+                pqxx::params{result.session_id, user->user_id});
+            crow::json::wvalue response;
+            response["session"] = parkingSessionJson(rows[0]);
+            return crow::response(201, response);
+        }
+        catch (const std::exception &exception)
+        {
+            std::cerr << "Reservation check-in failed: " << exception.what() << std::endl;
+            return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The reservation could not be checked in.");
+        } });
+
+    CROW_ROUTE(app, "/api/parking-sessions/active").methods(crow::HTTPMethod::GET)
+    ([&database](const crow::request &request)
+     {
+        try
+        {
+            const auto user = findAuthenticatedUser(database, request);
+            if (!user)
+            {
+                return unauthorized();
+            }
+
+            const pqxx::result rows = database.executeRead(
+                activeSessionDetailsQuery +
+                "WHERE s.user_id = $1 AND s.exit_time IS NULL AND s.status = 'active' "
+                "ORDER BY s.entry_time DESC, s.session_id DESC",
+                pqxx::params{user->user_id});
+            crow::json::wvalue response;
+            response["sessions"] = crow::json::wvalue::list();
+            for (std::size_t index = 0; index < rows.size(); ++index)
+            {
+                response["sessions"][index] = parkingSessionJson(rows[index]);
+            }
+            return crow::response(response);
+        }
+        catch (const std::exception &exception)
+        {
+            std::cerr << "Active parking sessions query failed: " << exception.what() << std::endl;
+            return api::errorResponse(503, "DATABASE_UNAVAILABLE", "Active parking sessions could not be loaded.");
         } });
 
     CROW_ROUTE(app, "/api/reservations/<uint>").methods(crow::HTTPMethod::GET)

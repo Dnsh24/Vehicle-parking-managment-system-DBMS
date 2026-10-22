@@ -3,17 +3,18 @@
 ## Current status
 
 The API includes authentication, profiles, owner-scoped vehicle management,
-parking availability, and Phase 5 reservation operations.
+parking availability, reservations, manual reservation check-in, and active
+parking sessions.
 
 | Component | Current status |
 | --- | --- |
 | Crow backend | Implemented with multi-threaded routing |
-| REST endpoints | Health, parking availability, vehicles, reservations, and administrator endpoints implemented |
+| REST endpoints | Health, parking availability, vehicles, reservations, parking sessions, and administrator endpoints implemented |
 | PostgreSQL through C++ | libpqxx parameterized queries and transactions |
-| Frontend API integration | Authentication, parking availability, vehicle and reservation management, and admin console |
+| Frontend API integration | Authentication, parking availability, vehicle and reservation management, active sessions, and admin console |
 | Authentication and authorization | Bearer sessions with role-based access (`user`, `admin`) |
 | Vehicle management | Authenticated CRUD and parking assignments implemented |
-| Reservations | Availability filters, transactional booking, owner-scoped listing/details, and cancellation |
+| Reservations and sessions | Availability filters, transactional booking/check-in, owner-scoped listing/details, cancellation, and active-session listing |
 | Administrator management | Users, areas, slots, rates, and maintenance operations implemented |
 
 The database tables are not API resources until backend routes and operations
@@ -68,7 +69,8 @@ Returns only vehicles owned by the authenticated user.
       "vehicle_id": 4,
       "registration_number": "ABC123",
       "vehicle_type": "car",
-      "is_electric": true
+      "is_electric": true,
+      "needs_accessible_parking": false
     }
   ]
 }
@@ -83,7 +85,10 @@ object containing the active slot and parking start time.
 Creates a vehicle for the authenticated user. Registration numbers are trimmed
 and converted to uppercase. The JSON body requires `registration_number` (1-20
 characters) and `vehicle_type` (`car`, `bike`, `scooter`, `truck`, `bus`, or
-`other`). `is_electric` is an optional boolean that defaults to `false`.
+`other`). `is_electric` and `needs_accessible_parking` are optional booleans
+that default to `false`. Set `needs_accessible_parking` when this vehicle needs
+a handicapped parking space. Vehicles without this preference are never
+offered handicapped spaces.
 
 Returns `201 Created` with the created vehicle in a `vehicle` object.
 Duplicate registration numbers return `409
@@ -98,16 +103,20 @@ the vehicle.
 
 Returns active-area slots that are currently available and match the vehicle's
 type. EV charging slots are included only when the vehicle is marked electric.
-Only the vehicle's owner can request its slots. A vehicle that is already parked
-returns `409 VEHICLE_ALREADY_PARKED`.
+Handicapped slots are included only when the vehicle has
+`needs_accessible_parking` set to `true`; the map continues to show the
+handicapped section to all users. Only the vehicle's owner can request its
+slots. A vehicle that is already parked returns `409 VEHICLE_ALREADY_PARKED`.
 
 ### `POST /api/vehicles/{vehicle_id}/park`
 
 Assigns the owner's vehicle to an available compatible slot. The JSON body
 requires a positive `slot_id`. The operation atomically marks the slot
 occupied and records the active assignment. EV charging slots require the
-vehicle to be marked electric. A slot that is no longer available, is inactive,
-or is incompatible returns `409 PARKING_SLOT_UNAVAILABLE`.
+vehicle to be marked electric. Handicapped slots require
+`needs_accessible_parking` to be true for the vehicle. A slot that is no longer
+available, is inactive, or is incompatible returns `409
+PARKING_SLOT_UNAVAILABLE`.
 
 Slots with any pending, confirmed, or active reservation that has not ended are
 not eligible for direct parking, so a future reservation cannot be displaced
@@ -132,7 +141,8 @@ Vehicle edits are rejected while the vehicle is parked.
 ### `PUT /api/vehicles/{vehicle_id}`
 
 Updates the authenticated user's vehicle using the same fields as the create
-request. Returns the updated vehicle in a `vehicle` object. A vehicle that
+request. If `needs_accessible_parking` is omitted, the current preference is
+preserved. Returns the updated vehicle in a `vehicle` object. A vehicle that
 does not exist or belongs to another user returns `404 VEHICLE_NOT_FOUND`.
 Duplicate registration numbers return `409
 VEHICLE_REGISTRATION_ALREADY_EXISTS`.
@@ -188,6 +198,27 @@ users' reservations are never included.
 Returns the requested reservation only when it belongs to the authenticated
 user. Unknown and unowned reservation IDs both return `404
 RESERVATION_NOT_FOUND`.
+
+### `POST /api/reservations/{reservation_id}/check-in`
+
+Checks in the authenticated owner's confirmed reservation and atomically
+creates an active parking session, records the entry time, marks the
+reservation active, and marks the slot occupied. Check-in is available from
+the reservation start time up to (but not including) its end time. Slots or
+areas that are unavailable, or slots with maintenance overlapping the
+remaining reservation time, cannot be checked into.
+
+Returns `201 Created` with a `session` containing the session, vehicle, slot,
+area, entry time, and reservation end time. Unknown or unowned reservations
+return `404 RESERVATION_NOT_FOUND`. Check-in before the reservation begins,
+after it ends, for a non-confirmed reservation, or when the vehicle/slot is
+unavailable returns `409` with a specific error code.
+
+### `GET /api/parking-sessions/active`
+
+Returns the authenticated user's active parking sessions with vehicle, slot,
+area, entry time, and reserved end time. Unauthenticated requests return `401
+UNAUTHENTICATED`.
 
 ### `DELETE /api/reservations/{reservation_id}`
 
@@ -404,9 +435,8 @@ token.
 The following areas are planned, not implemented:
 
 - Parking-area, slot, and rate management writes
-- Availability and reservation operations
 - QR-token check-in
-- Parking sessions and checkout
+- Parking-session checkout
 - Payments, receipts, and notifications
 
 Request and response contracts should be added here only when their routes are

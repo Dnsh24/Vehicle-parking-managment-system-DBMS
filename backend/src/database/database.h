@@ -29,10 +29,27 @@ enum class ReservationCreationStatus
     invalid_time_range
 };
 
+enum class ReservationCheckInStatus
+{
+    checked_in,
+    not_found,
+    not_confirmed,
+    too_early,
+    expired,
+    slot_unavailable,
+    vehicle_unavailable
+};
+
 struct ReservationCreationResult
 {
     ReservationCreationStatus status;
     std::int64_t reservation_id = 0;
+};
+
+struct ReservationCheckInResult
+{
+    ReservationCheckInStatus status;
+    std::int64_t session_id = 0;
 };
 
 enum class VehicleParkingStatus
@@ -70,6 +87,9 @@ public:
         std::int64_t slot_id,
         const std::string &start_time,
         const std::string &end_time) const;
+    ReservationCheckInResult checkInReservation(
+        std::int64_t user_id,
+        std::int64_t reservation_id) const;
     VehicleParkingResult parkVehicle(
         std::int64_t user_id,
         std::int64_t vehicle_id,

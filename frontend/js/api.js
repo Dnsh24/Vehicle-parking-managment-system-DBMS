@@ -62,7 +62,7 @@ function sectionForSlot(slot) {
     if (slot.vehicle_type === "bike" || slot.vehicle_type === "scooter") {
         return "bike";
     }
-    if (slot.is_ev) {
+    if (slot.is_ev || /\bev\b|electric|charg/i.test(slot.slot_type)) {
         return "ev-car";
     }
     if (slotType.includes("handicap") || slotType.includes("accessible")) {
@@ -118,4 +118,3 @@ async function adminApiCall(endpoint, method = "GET", body = null) {
     }
     return data;
 }
-

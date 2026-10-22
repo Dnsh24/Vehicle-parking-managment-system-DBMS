@@ -174,6 +174,17 @@ reservation, session, or parking-assignment history. Linked vehicles and
 historical records are preserved. Maintenance and unavailable slots are left
 unchanged.
 
+For an existing database, add the vehicle accessibility preference before
+starting the updated backend:
+
+```text
+psql -U <user> -d parking_management -f database/phase6_accessible_parking.sql
+```
+
+This migration defaults existing vehicles to not requiring accessible parking.
+Vehicles marked as requiring accessible parking may use handicapped slots;
+other vehicles are not offered those slots.
+
 For local Phase 1 development data, run the repeatable seed script after the
 schema:
 

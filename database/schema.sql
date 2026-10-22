@@ -54,6 +54,7 @@ CREATE TABLE vehicles (
     registration_number VARCHAR(20) NOT NULL UNIQUE,
     vehicle_type VARCHAR(30) NOT NULL,
     is_electric BOOLEAN NOT NULL DEFAULT FALSE,
+    needs_accessible_parking BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_vehicles_user

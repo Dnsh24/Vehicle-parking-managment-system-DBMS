@@ -105,7 +105,8 @@ void registerParkingRoutes(
 
             const pqxx::result slot_rows = database.executeRead(
                 "SELECT ps.slot_id, ps.area_id, ps.slot_number, ps.vehicle_type, "
-                "ps.slot_type, ps.is_ev, "
+                "ps.slot_type, (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
+                "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') AS is_ev, "
                 "CASE "
                 "WHEN parking.vehicle_registration IS NOT NULL THEN 'occupied' "
                 "WHEN EXISTS (SELECT 1 FROM parking_sessions s "
@@ -183,4 +184,3 @@ void registerParkingRoutes(
 }
 
 } // namespace routes
-

@@ -124,7 +124,9 @@ if(BUILD_TESTING)
         PRIVATE
         Crow::Crow
     )
+    if(WIN32)
+        target_link_libraries(admin_tests PRIVATE ws2_32)
+    endif()
 
     add_test(NAME admin_tests COMMAND admin_tests)
 endif()
-

@@ -366,6 +366,9 @@ References: `reservations`, `parking_slots`, and `parking_rates` in
 
 #### Phase 6: Manual entry and parking sessions
 
+**Status:** Implemented. Reservation check-in creates an active session
+transactionally, and active sessions are shown in the user dashboard.
+
 - Backend: validate the reservation check-in window, create sessions, record
   entry, and perform manual check-in state transitions.
 - Frontend: reservation check-in button, check-in result, and active session

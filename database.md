@@ -53,6 +53,7 @@ Stores vehicles belonging to users.
 | `registration_number` | `VARCHAR(20)` | `NOT NULL`, `UNIQUE` | Registration number |
 | `vehicle_type` | `VARCHAR(30)` | `NOT NULL`; `car`, `bike`, `scooter`, `truck`, `bus`, or `other` | Vehicle category |
 | `is_electric` | `BOOLEAN` | `NOT NULL`, default `FALSE` | EV flag |
+| `needs_accessible_parking` | `BOOLEAN` | `NOT NULL`, default `FALSE` | Allows this vehicle to use handicapped parking slots |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Creation time |
 
 ### `parking_areas`

@@ -25,6 +25,7 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             }
             const pqxx::result rows = database.executeRead(
                 "SELECT v.vehicle_id, v.registration_number, v.vehicle_type, v.is_electric, "
+                "v.needs_accessible_parking, "
                 "a.assignment_id, a.parked_at, a.slot_id, a.slot_number, a.area_name "
                 "FROM vehicles v "
                 "LEFT JOIN LATERAL ("
@@ -56,7 +57,8 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                     row["vehicle_id"].as<std::int64_t>(),
                     row["registration_number"].c_str(),
                     row["vehicle_type"].c_str(),
-                    row["is_electric"].as<bool>());
+                    row["is_electric"].as<bool>(),
+                    row["needs_accessible_parking"].as<bool>());
                 vehicle["can_delete"] = row["slot_id"].is_null();
                 if (!row["slot_id"].is_null())
                 {
@@ -90,7 +92,8 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 return unauthorized();
             }
             const pqxx::result vehicle_rows = database.executeRead(
-                "SELECT vehicle_type, is_electric FROM vehicles WHERE vehicle_id = $1 AND user_id = $2",
+                "SELECT vehicle_type, is_electric, needs_accessible_parking "
+                "FROM vehicles WHERE vehicle_id = $1 AND user_id = $2",
                 pqxx::params{vehicle_id, user->user_id});
             if (vehicle_rows.empty())
             {
@@ -112,13 +115,17 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
 
             const pqxx::result rows = database.executeRead(
                 "SELECT ps.slot_id, ps.area_id, ps.slot_number, ps.vehicle_type, "
-                "ps.slot_type, ps.is_ev, 'available' AS status, pa.name AS area_name "
+                "ps.slot_type, (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
+                "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') AS is_ev, "
+                "'available' AS status, pa.name AS area_name "
                 "FROM parking_slots ps "
                 "JOIN parking_areas pa ON pa.area_id = ps.area_id "
                 "WHERE (ps.status = 'available' OR ps.status IN ('occupied', 'reserved')) "
                 "AND pa.status = 'active' "
                 "AND ps.vehicle_type = $1 "
-                "AND (NOT ps.is_ev OR $3) "
+                "AND (NOT (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
+                "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') OR $3) "
+                "AND ($4 OR (ps.slot_type NOT ILIKE '%handicap%' AND ps.slot_type NOT ILIKE '%accessible%')) "
                 "AND NOT EXISTS (SELECT 1 FROM parking_assignments a "
                 "WHERE a.slot_id = ps.slot_id AND a.checkout_at IS NULL) "
                 "AND NOT EXISTS (SELECT 1 FROM parking_assignments a "
@@ -136,7 +143,8 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 pqxx::params{
                     vehicle_rows[0]["vehicle_type"].c_str(),
                     vehicle_id,
-                    vehicle_rows[0]["is_electric"].as<bool>()});
+                    vehicle_rows[0]["is_electric"].as<bool>(),
+                    vehicle_rows[0]["needs_accessible_parking"].as<bool>()});
 
             crow::json::wvalue response;
             response["slots"] = crow::json::wvalue::list();
@@ -277,6 +285,7 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             const std::string registration = normalizeRegistration(jsonString(body, "registration_number"));
             const std::string vehicle_type = jsonString(body, "vehicle_type");
             const auto is_electric = jsonBoolean(body, "is_electric");
+            const auto needs_accessible_parking = jsonBoolean(body, "needs_accessible_parking");
             if (registration.empty() || registration.size() > 20)
             {
                 return api::errorResponse(400, "INVALID_REGISTRATION_NUMBER", "Registration number is required and must be at most 20 characters.");
@@ -289,18 +298,24 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             {
                 return api::errorResponse(400, "INVALID_ELECTRIC_FLAG", "is_electric must be a boolean.");
             }
+            if (!needs_accessible_parking && body.has("needs_accessible_parking"))
+            {
+                return api::errorResponse(400, "INVALID_ACCESSIBLE_PARKING_FLAG", "needs_accessible_parking must be a boolean.");
+            }
 
             const pqxx::result rows = database.executeWrite(
-                "INSERT INTO vehicles (user_id, registration_number, vehicle_type, is_electric) "
-                "VALUES ($1, $2, $3, $4) "
-                "RETURNING vehicle_id, registration_number, vehicle_type, is_electric",
-                pqxx::params{user->user_id, registration, vehicle_type, *is_electric});
+                "INSERT INTO vehicles "
+                "(user_id, registration_number, vehicle_type, is_electric, needs_accessible_parking) "
+                "VALUES ($1, $2, $3, $4, $5) "
+                "RETURNING vehicle_id, registration_number, vehicle_type, is_electric, needs_accessible_parking",
+                pqxx::params{user->user_id, registration, vehicle_type, *is_electric, needs_accessible_parking.value_or(false)});
             crow::json::wvalue response;
             response["vehicle"] = api::vehicleJson(
                 rows[0]["vehicle_id"].as<std::int64_t>(),
                 rows[0]["registration_number"].c_str(),
                 rows[0]["vehicle_type"].c_str(),
-                rows[0]["is_electric"].as<bool>());
+                rows[0]["is_electric"].as<bool>(),
+                rows[0]["needs_accessible_parking"].as<bool>());
             return crow::response(201, response);
         }
         catch (const pqxx::unique_violation &)
@@ -327,6 +342,7 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             const std::string registration = normalizeRegistration(jsonString(body, "registration_number"));
             const std::string vehicle_type = jsonString(body, "vehicle_type");
             const auto is_electric = jsonBoolean(body, "is_electric");
+            const auto needs_accessible_parking = jsonBoolean(body, "needs_accessible_parking");
             if (registration.empty() || registration.size() > 20)
             {
                 return api::errorResponse(400, "INVALID_REGISTRATION_NUMBER", "Registration number is required and must be at most 20 characters.");
@@ -339,17 +355,23 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             {
                 return api::errorResponse(400, "INVALID_ELECTRIC_FLAG", "is_electric must be a boolean.");
             }
+            if (!needs_accessible_parking && body.has("needs_accessible_parking"))
+            {
+                return api::errorResponse(400, "INVALID_ACCESSIBLE_PARKING_FLAG", "needs_accessible_parking must be a boolean.");
+            }
 
             const pqxx::result rows = database.executeWrite(
-                "UPDATE vehicles SET registration_number = $1, vehicle_type = $2, is_electric = $3 "
-                "WHERE vehicle_id = $4 AND user_id = $5 "
+                "UPDATE vehicles SET registration_number = $1, vehicle_type = $2, is_electric = $3, "
+                "needs_accessible_parking = CASE WHEN $4 THEN $5 ELSE needs_accessible_parking END "
+                "WHERE vehicle_id = $6 AND user_id = $7 "
                 "AND NOT EXISTS (SELECT 1 FROM parking_assignments a "
                 "WHERE a.vehicle_id = vehicles.vehicle_id AND a.checkout_at IS NULL) "
                 "AND NOT EXISTS (SELECT 1 FROM parking_sessions s "
                 "WHERE s.vehicle_id = vehicles.vehicle_id AND s.exit_time IS NULL "
                 "AND s.status IN ('active', 'overstayed')) "
-                "RETURNING vehicle_id, registration_number, vehicle_type, is_electric",
-                pqxx::params{registration, vehicle_type, *is_electric, vehicle_id, user->user_id});
+                "RETURNING vehicle_id, registration_number, vehicle_type, is_electric, needs_accessible_parking",
+                pqxx::params{registration, vehicle_type, *is_electric, needs_accessible_parking.has_value(),
+                             needs_accessible_parking.value_or(false), vehicle_id, user->user_id});
             if (rows.empty())
             {
                 const pqxx::result existing = database.executeRead(
@@ -373,7 +395,8 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 rows[0]["vehicle_id"].as<std::int64_t>(),
                 rows[0]["registration_number"].c_str(),
                 rows[0]["vehicle_type"].c_str(),
-                rows[0]["is_electric"].as<bool>());
+                rows[0]["is_electric"].as<bool>(),
+                rows[0]["needs_accessible_parking"].as<bool>());
             return crow::response(response);
         }
         catch (const pqxx::unique_violation &)

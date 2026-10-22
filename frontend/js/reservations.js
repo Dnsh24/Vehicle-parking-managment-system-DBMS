@@ -9,6 +9,7 @@ const reservationResults = document.getElementById("reservationResults");
 const reservationList = document.getElementById("reservationList");
 const reservationMessage = document.getElementById("reservationMessage");
 const refreshReservationsButton = document.getElementById("refreshReservationsButton");
+const activeParkingSessions = document.getElementById("activeParkingSessions");
 
 function setReservationMessage(message, isError = false) {
     if (!reservationMessage) return;
@@ -46,6 +47,16 @@ function setSelectOptions(select, items, placeholder, getValue, getLabel) {
     }
 }
 
+function setReservationVehicleOptions(vehicles) {
+    setSelectOptions(
+        reservationVehicle,
+        vehicles,
+        "Choose a vehicle",
+        (vehicle) => vehicle.vehicle_id,
+        (vehicle) => `${vehicle.registration_number} · ${vehicle.vehicle_type}${vehicle.is_electric ? " · EV" : ""}`
+    );
+}
+
 async function updateReservationVehicleOptions(vehicles) {
     if (!reservationVehicle) return;
     if (!vehicles) {
@@ -56,13 +67,7 @@ async function updateReservationVehicleOptions(vehicles) {
         }
         vehicles = data.vehicles;
     }
-    setSelectOptions(
-        reservationVehicle,
-        vehicles,
-        "Choose a vehicle",
-        (vehicle) => vehicle.vehicle_id,
-        (vehicle) => `${vehicle.registration_number} · ${vehicle.vehicle_type}${vehicle.is_electric ? " · EV" : ""}`
-    );
+    setReservationVehicleOptions(vehicles);
 }
 
 async function loadReservationOptions() {
@@ -88,13 +93,7 @@ async function loadReservationOptions() {
             (area) => area.area_id,
             (area) => `${area.name} · ${area.location}`
         );
-        setSelectOptions(
-            reservationVehicle,
-            vehicleData.vehicles,
-            "Choose a vehicle",
-            (vehicle) => vehicle.vehicle_id,
-            (vehicle) => `${vehicle.registration_number} · ${vehicle.vehicle_type}${vehicle.is_electric ? " · EV" : ""}`
-        );
+        setReservationVehicleOptions(vehicleData.vehicles);
     } catch (error) {
         setReservationMessage(error.message, true);
     }
@@ -180,6 +179,15 @@ function renderReservations(reservations) {
         viewButton.textContent = "Details";
         actions.append(viewButton);
         if (reservation.status === "pending" || reservation.status === "confirmed") {
+            if (reservation.status === "confirmed") {
+                const checkInButton = document.createElement("button");
+                checkInButton.type = "button";
+                checkInButton.className = "refresh-button";
+                checkInButton.dataset.action = "check-in";
+                checkInButton.dataset.reservationId = reservation.reservation_id;
+                checkInButton.textContent = "Check in";
+                actions.append(checkInButton);
+            }
             const cancelButton = document.createElement("button");
             cancelButton.type = "button";
             cancelButton.className = "vehicle-cancel";
@@ -190,6 +198,34 @@ function renderReservations(reservations) {
         }
         card.append(details, actions);
         reservationList.append(card);
+    });
+}
+
+function renderActiveParkingSessions(sessions) {
+    if (!activeParkingSessions) return;
+    activeParkingSessions.replaceChildren();
+    if (sessions.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = "You don't have any active parking sessions.";
+        activeParkingSessions.append(empty);
+        return;
+    }
+
+    sessions.forEach((session) => {
+        const card = document.createElement("article");
+        card.className = "reservation-card";
+        const details = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = `${session.area_name} · ${session.slot_number}`;
+        const description = document.createElement("p");
+        description.textContent = `${session.registration_number} · Entry ${formatIsoTimestamp(session.entry_time)} · Reserved until ${formatIsoTimestamp(session.reserved_end_time)}`;
+        const status = document.createElement("span");
+        status.className = "reservation-status";
+        status.textContent = "Active";
+        details.append(title, description, status);
+        card.append(details);
+        activeParkingSessions.append(card);
     });
 }
 
@@ -213,12 +249,37 @@ async function loadReservations() {
     }
 }
 
+async function loadActiveParkingSessions() {
+    if (!activeParkingSessions) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/parking-sessions/active`, {
+            headers: authHeaders()
+        });
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data.sessions)) {
+            throw new Error(data.error?.message || "Active parking sessions could not be loaded.");
+        }
+        renderActiveParkingSessions(data.sessions);
+    } catch (error) {
+        activeParkingSessions.replaceChildren();
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = error.message;
+        activeParkingSessions.append(message);
+    }
+}
+
 async function loadReservationPage() {
     setReservationDateDefaults();
-    await Promise.all([loadReservationOptions(), loadReservations()]);
+    await Promise.all([loadReservationOptions(), loadReservations(), loadActiveParkingSessions()]);
 }
 
 if (reservationSearchForm) {
+    reservationVehicle.addEventListener("change", () => {
+        reservationSearchForm.elements.ev_only.checked = false;
+        setReservationMessage("");
+    });
+
     reservationSearchForm.addEventListener("invalid", (event) => {
         const field = event.target;
         const messages = {
@@ -299,6 +360,22 @@ if (reservationList) {
         if (!button) return;
         const reservationId = encodeURIComponent(button.dataset.reservationId);
         try {
+            if (button.dataset.action === "check-in") {
+                button.disabled = true;
+                const response = await fetch(`${API_BASE}/api/reservations/${reservationId}/check-in`, {
+                    method: "POST",
+                    headers: authHeaders()
+                });
+                const data = await response.json();
+                if (!response.ok || !data.session) {
+                    throw new Error(data.error?.message || "The reservation could not be checked in.");
+                }
+                setReservationMessage(
+                    `Checked in successfully. ${data.session.registration_number} is parked at ${data.session.area_name}, ${data.session.slot_number}.`
+                );
+                await Promise.all([loadReservations(), loadActiveParkingSessions()]);
+                return;
+            }
             if (button.dataset.action === "details") {
                 const response = await fetch(`${API_BASE}/api/reservations/${reservationId}`, {
                     headers: authHeaders()
@@ -328,11 +405,16 @@ if (reservationList) {
             await loadReservations();
             reservationSearchForm.requestSubmit();
         } catch (error) {
+            if (button.dataset.action === "check-in") {
+                button.disabled = false;
+            }
             setReservationMessage(error.message, true);
         }
     });
 }
 
 if (refreshReservationsButton) {
-    refreshReservationsButton.addEventListener("click", loadReservations);
+    refreshReservationsButton.addEventListener("click", () => {
+        Promise.all([loadReservations(), loadActiveParkingSessions()]);
+    });
 }
