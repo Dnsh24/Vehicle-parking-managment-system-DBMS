@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <string>
+#include <algorithm>
 
 namespace
 {
@@ -451,4 +452,319 @@ VehicleParkingResult Database::parkVehicle(
         slot[0]["slot_number"].as<std::string>(),
         slot[0]["area_name"].as<std::string>(),
         assignment[0]["parked_at"].as<std::string>()};
+}
+SessionExitResult Database::exitParkingSession(
+    std::int64_t user_id,
+    std::int64_t session_id,
+    const std::string &payment_action) const
+{
+    pqxx::connection connection = createConnection();
+    pqxx::work transaction(connection);
+
+    const pqxx::result session_rows = transaction.exec_params(
+        "SELECT s.session_id, s.reservation_id, s.user_id, s.vehicle_id, s.slot_id, "
+        "s.status AS session_status, s.exit_time, "
+        "s.entry_time, "
+        "r.end_time AS reserved_end_time, "
+        "to_char(s.entry_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS entry_time_str, "
+        "to_char(r.end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS reserved_end_time_str, "
+        "v.registration_number, v.vehicle_type, "
+        "ps.slot_number, ps.slot_type, ps.area_id, "
+        "pa.name AS area_name, pa.location, "
+        "COALESCE(pr.hourly_rate, 40.00) AS hourly_rate, "
+        "COALESCE(pr.overstay_rate, 60.00) AS overstay_rate "
+        "FROM parking_sessions s "
+        "JOIN reservations r ON r.reservation_id = s.reservation_id "
+        "JOIN vehicles v ON v.vehicle_id = s.vehicle_id "
+        "JOIN parking_slots ps ON ps.slot_id = s.slot_id "
+        "JOIN parking_areas pa ON pa.area_id = ps.area_id "
+        "LEFT JOIN parking_rates pr ON pr.area_id = pa.area_id "
+        "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type "
+        "WHERE s.session_id = $1 AND s.user_id = $2 "
+        "FOR UPDATE OF s, ps, r",
+        session_id,
+        user_id);
+
+    if (session_rows.empty())
+    {
+        return {SessionExitStatus::not_found, {}};
+    }
+
+    const auto &row = session_rows[0];
+    const std::string current_status = row["session_status"].as<std::string>();
+    if (!row["exit_time"].is_null() || current_status == "completed" || current_status == "cancelled")
+    {
+        return {SessionExitStatus::already_completed, {}};
+    }
+
+    const pqxx::result calc_rows = transaction.exec_params(
+        "SELECT "
+        "clock_timestamp() AS exit_time_raw, "
+        "to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS exit_time_str, "
+        "GREATEST(1, CEIL(EXTRACT(EPOCH FROM (clock_timestamp() - $1::timestamptz)) / 60.0)::INTEGER) AS duration_minutes, "
+        "CASE "
+        "    WHEN clock_timestamp() > $2::timestamptz THEN "
+        "        CEIL(EXTRACT(EPOCH FROM (clock_timestamp() - $2::timestamptz)) / 60.0)::INTEGER "
+        "    ELSE 0 "
+        "END AS overstay_duration_minutes",
+        row["entry_time"].as<std::string>(),
+        row["reserved_end_time"].as<std::string>());
+
+    const auto &calc = calc_rows[0];
+    const std::string exit_time_str = calc["exit_time_str"].as<std::string>();
+    const int duration_minutes = calc["duration_minutes"].as<int>();
+    const int overstay_duration_minutes = calc["overstay_duration_minutes"].as<int>();
+
+    const int billed_hours = std::max(1, (duration_minutes + 59) / 60);
+    const int billed_overstay_hours = overstay_duration_minutes > 0 ? (overstay_duration_minutes + 59) / 60 : 0;
+
+    const double hourly_rate = row["hourly_rate"].as<double>();
+    const double overstay_rate = row["overstay_rate"].as<double>();
+
+    const double base_fee = billed_hours * hourly_rate;
+    const double overstay_fee = billed_overstay_hours * overstay_rate;
+    const double total_fee = base_fee + overstay_fee;
+
+    const std::string final_session_status = (overstay_duration_minutes > 0) ? "overstayed" : "completed";
+
+    std::string payment_status = (payment_action == "online_payment") ? "online_payment" : "payment_at_desk";
+    if (payment_action == "unpaid")
+    {
+        payment_status = "unpaid";
+    }
+    else if (payment_action == "waived")
+    {
+        payment_status = "waived";
+    }
+
+    transaction.exec_params(
+        "UPDATE parking_sessions "
+        "SET exit_time = $1::timestamptz, "
+        "    duration_minutes = $2, "
+        "    overstay_duration_minutes = $3, "
+        "    calculated_fee = $4, "
+        "    status = $5 "
+        "WHERE session_id = $6",
+        exit_time_str,
+        duration_minutes,
+        overstay_duration_minutes,
+        total_fee,
+        final_session_status,
+        session_id);
+
+    const std::int64_t reservation_id = row["reservation_id"].as<std::int64_t>();
+    transaction.exec_params(
+        "UPDATE reservations SET status = 'completed' "
+        "WHERE reservation_id = $1 AND status IN ('confirmed', 'active')",
+        reservation_id);
+
+    const std::int64_t slot_id = row["slot_id"].as<std::int64_t>();
+    transaction.exec_params(
+        "UPDATE parking_slots ps SET status = CASE "
+        "WHEN EXISTS ( "
+        "    SELECT 1 FROM maintenance m "
+        "    WHERE m.slot_id = ps.slot_id "
+        "      AND m.status IN ('scheduled', 'in_progress') "
+        "      AND m.start_time <= CURRENT_TIMESTAMP "
+        "      AND (m.end_time IS NULL OR m.end_time > CURRENT_TIMESTAMP) "
+        ") THEN 'maintenance' "
+        "ELSE 'available' END "
+        "WHERE ps.slot_id = $1",
+        slot_id);
+
+    std::string payment_db_status = "successful";
+    std::string payment_method = (payment_status == "online_payment") ? "UPI" : "CASH";
+    double payment_amount = total_fee;
+    std::string paid_at_val = exit_time_str;
+    std::string tx_ref = (payment_status == "online_payment" ? "ONLINE-" : "DESK-") + std::to_string(session_id) + "-" + std::to_string(duration_minutes);
+
+    if (payment_status == "unpaid")
+    {
+        payment_db_status = "pending";
+        paid_at_val = "";
+    }
+    else if (payment_status == "waived")
+    {
+        payment_db_status = "successful";
+        payment_method = "OTHER";
+        payment_amount = 0.00;
+        tx_ref = "WAIVED-" + std::to_string(session_id);
+    }
+
+    if (paid_at_val.empty())
+    {
+        transaction.exec_params(
+            "INSERT INTO payments "
+            "(reservation_id, session_id, user_id, amount, payment_method, status, transaction_reference, paid_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, NULL)",
+            reservation_id,
+            session_id,
+            user_id,
+            payment_amount,
+            payment_method,
+            payment_db_status,
+            tx_ref);
+    }
+    else
+    {
+        transaction.exec_params(
+            "INSERT INTO payments "
+            "(reservation_id, session_id, user_id, amount, payment_method, status, transaction_reference, paid_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz)",
+            reservation_id,
+            session_id,
+            user_id,
+            payment_amount,
+            payment_method,
+            payment_db_status,
+            tx_ref,
+            paid_at_val);
+    }
+
+    transaction.commit();
+
+    api::SessionFeeSummaryData summary;
+    summary.session_id = session_id;
+    summary.reservation_id = reservation_id;
+    summary.vehicle_id = row["vehicle_id"].as<std::int64_t>();
+    summary.registration_number = row["registration_number"].as<std::string>();
+    summary.vehicle_type = row["vehicle_type"].as<std::string>();
+    summary.slot_id = slot_id;
+    summary.slot_number = row["slot_number"].as<std::string>();
+    summary.area_name = row["area_name"].as<std::string>();
+    summary.location = row["location"].as<std::string>();
+    summary.entry_time = row["entry_time_str"].as<std::string>();
+    summary.exit_time = exit_time_str;
+    summary.reserved_end_time = row["reserved_end_time_str"].as<std::string>();
+    summary.duration_minutes = duration_minutes;
+    summary.billed_hours = billed_hours;
+    summary.overstay_duration_minutes = overstay_duration_minutes;
+    summary.billed_overstay_hours = billed_overstay_hours;
+    summary.hourly_rate = hourly_rate;
+    summary.overstay_rate = overstay_rate;
+    summary.base_fee = base_fee;
+    summary.overstay_fee = overstay_fee;
+    summary.total_fee = total_fee;
+    summary.payment_status = payment_status;
+    summary.session_status = final_session_status;
+
+    return {SessionExitStatus::completed, summary};
+}
+
+std::optional<api::SessionFeeSummaryData> Database::getSessionFeeSummary(
+    std::int64_t user_id,
+    std::int64_t session_id) const
+{
+    pqxx::connection connection = createConnection();
+    pqxx::work transaction(connection);
+
+    const pqxx::result session_rows = transaction.exec_params(
+        "SELECT s.session_id, s.reservation_id, s.user_id, s.vehicle_id, s.slot_id, "
+        "s.status AS session_status, "
+        "s.duration_minutes, s.overstay_duration_minutes, s.calculated_fee, "
+        "to_char(s.entry_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS entry_time_str, "
+        "to_char(s.exit_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS exit_time_str, "
+        "to_char(r.end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS reserved_end_time_str, "
+        "s.entry_time, s.exit_time, r.end_time AS reserved_end_time, "
+        "v.registration_number, v.vehicle_type, "
+        "ps.slot_number, ps.slot_type, ps.area_id, "
+        "pa.name AS area_name, pa.location, "
+        "COALESCE(pr.hourly_rate, 40.00) AS hourly_rate, "
+        "COALESCE(pr.overstay_rate, 60.00) AS overstay_rate, "
+        "p.status AS payment_db_status, p.payment_method "
+        "FROM parking_sessions s "
+        "JOIN reservations r ON r.reservation_id = s.reservation_id "
+        "JOIN vehicles v ON v.vehicle_id = s.vehicle_id "
+        "JOIN parking_slots ps ON ps.slot_id = s.slot_id "
+        "JOIN parking_areas pa ON pa.area_id = ps.area_id "
+        "LEFT JOIN parking_rates pr ON pr.area_id = pa.area_id "
+        "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type "
+        "LEFT JOIN payments p ON p.session_id = s.session_id "
+        "WHERE s.session_id = $1 AND s.user_id = $2",
+        session_id,
+        user_id);
+
+    if (session_rows.empty())
+    {
+        return std::nullopt;
+    }
+
+    const auto &row = session_rows[0];
+    api::SessionFeeSummaryData summary;
+    summary.session_id = session_id;
+    summary.reservation_id = row["reservation_id"].as<std::int64_t>();
+    summary.vehicle_id = row["vehicle_id"].as<std::int64_t>();
+    summary.registration_number = row["registration_number"].as<std::string>();
+    summary.vehicle_type = row["vehicle_type"].as<std::string>();
+    summary.slot_id = row["slot_id"].as<std::int64_t>();
+    summary.slot_number = row["slot_number"].as<std::string>();
+    summary.area_name = row["area_name"].as<std::string>();
+    summary.location = row["location"].as<std::string>();
+    summary.entry_time = row["entry_time_str"].as<std::string>();
+    summary.reserved_end_time = row["reserved_end_time_str"].as<std::string>();
+    summary.hourly_rate = row["hourly_rate"].as<double>();
+    summary.overstay_rate = row["overstay_rate"].as<double>();
+
+    if (!row["exit_time"].is_null())
+    {
+        summary.exit_time = row["exit_time_str"].as<std::string>();
+        summary.duration_minutes = row["duration_minutes"].as<int>();
+        summary.overstay_duration_minutes = row["overstay_duration_minutes"].as<int>();
+        summary.total_fee = row["calculated_fee"].as<double>();
+        summary.session_status = row["session_status"].as<std::string>();
+        summary.billed_hours = std::max(1, (summary.duration_minutes + 59) / 60);
+        summary.billed_overstay_hours = summary.overstay_duration_minutes > 0 ? (summary.overstay_duration_minutes + 59) / 60 : 0;
+        summary.base_fee = summary.billed_hours * summary.hourly_rate;
+        summary.overstay_fee = summary.billed_overstay_hours * summary.overstay_rate;
+
+        if (!row["payment_db_status"].is_null())
+        {
+            const std::string p_status = row["payment_db_status"].as<std::string>();
+            const std::string p_method = row["payment_method"].as<std::string>();
+            if (p_status == "successful" && p_method == "OTHER")
+            {
+                summary.payment_status = "waived";
+            }
+            else if (p_status == "successful")
+            {
+                summary.payment_status = "paid_manually";
+            }
+            else
+            {
+                summary.payment_status = "unpaid";
+            }
+        }
+        else
+        {
+            summary.payment_status = "unpaid";
+        }
+    }
+    else
+    {
+        const pqxx::result calc_rows = transaction.exec_params(
+            "SELECT "
+            "to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS exit_time_str, "
+            "GREATEST(1, CEIL(EXTRACT(EPOCH FROM (clock_timestamp() - $1::timestamptz)) / 60.0)::INTEGER) AS duration_minutes, "
+            "CASE "
+            "    WHEN clock_timestamp() > $2::timestamptz THEN "
+            "        CEIL(EXTRACT(EPOCH FROM (clock_timestamp() - $2::timestamptz)) / 60.0)::INTEGER "
+            "    ELSE 0 "
+            "END AS overstay_duration_minutes",
+            row["entry_time"].as<std::string>(),
+            row["reserved_end_time"].as<std::string>());
+
+        const auto &calc = calc_rows[0];
+        summary.exit_time = calc["exit_time_str"].as<std::string>();
+        summary.duration_minutes = calc["duration_minutes"].as<int>();
+        summary.overstay_duration_minutes = calc["overstay_duration_minutes"].as<int>();
+        summary.billed_hours = std::max(1, (summary.duration_minutes + 59) / 60);
+        summary.billed_overstay_hours = summary.overstay_duration_minutes > 0 ? (summary.overstay_duration_minutes + 59) / 60 : 0;
+        summary.base_fee = summary.billed_hours * summary.hourly_rate;
+        summary.overstay_fee = summary.billed_overstay_hours * summary.overstay_rate;
+        summary.total_fee = summary.base_fee + summary.overstay_fee;
+        summary.session_status = row["session_status"].as<std::string>();
+        summary.payment_status = "unpaid";
+    }
+
+    return summary;
 }

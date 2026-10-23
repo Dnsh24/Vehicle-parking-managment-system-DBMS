@@ -1,10 +1,12 @@
 #pragma once
 
 #include "../config/config.h"
+#include "../api/session_responses.h"
 
 #include <pqxx/pqxx>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 struct DatabaseCheckResult
@@ -40,6 +42,13 @@ enum class ReservationCheckInStatus
     vehicle_unavailable
 };
 
+enum class SessionExitStatus
+{
+    completed,
+    not_found,
+    already_completed
+};
+
 struct ReservationCreationResult
 {
     ReservationCreationStatus status;
@@ -50,6 +59,12 @@ struct ReservationCheckInResult
 {
     ReservationCheckInStatus status;
     std::int64_t session_id = 0;
+};
+
+struct SessionExitResult
+{
+    SessionExitStatus status;
+    api::SessionFeeSummaryData fee_summary;
 };
 
 enum class VehicleParkingStatus
@@ -90,6 +105,13 @@ public:
     ReservationCheckInResult checkInReservation(
         std::int64_t user_id,
         std::int64_t reservation_id) const;
+    SessionExitResult exitParkingSession(
+        std::int64_t user_id,
+        std::int64_t session_id,
+        const std::string &payment_action = "paid_manually") const;
+    std::optional<api::SessionFeeSummaryData> getSessionFeeSummary(
+        std::int64_t user_id,
+        std::int64_t session_id) const;
     VehicleParkingResult parkVehicle(
         std::int64_t user_id,
         std::int64_t vehicle_id,

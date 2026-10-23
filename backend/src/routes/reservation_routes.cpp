@@ -1,6 +1,7 @@
 #include "reservation_routes.h"
 #include "route_helpers.h"
 #include "api/errors.h"
+#include "api/session_responses.h"
 #include "validation/validation.h"
 
 #include <iostream>
@@ -469,6 +470,94 @@ void registerReservationRoutes(
             std::cerr << "Reservation cancellation failed: " << exception.what() << std::endl;
             return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The reservation could not be cancelled.");
         } });
+
+    auto handleSessionExit = [&database](const crow::request &request, unsigned int session_id)
+    {
+        try
+        {
+            const auto user = findAuthenticatedUser(database, request);
+            if (!user)
+            {
+                return unauthorized();
+            }
+
+            std::string payment_action = "paid_manually";
+            if (!request.body.empty())
+            {
+                const auto body = crow::json::load(request.body);
+                if (body && body.has("payment_action") && body["payment_action"].t() == crow::json::type::String)
+                {
+                    payment_action = body["payment_action"].s();
+                }
+            }
+
+            const SessionExitResult result = database.exitParkingSession(
+                user->user_id,
+                static_cast<std::int64_t>(session_id),
+                payment_action);
+
+            switch (result.status)
+            {
+            case SessionExitStatus::not_found:
+                return api::errorResponse(404, "SESSION_NOT_FOUND", "The parking session could not be found.");
+            case SessionExitStatus::already_completed:
+                return api::errorResponse(409, "SESSION_ALREADY_COMPLETED", "The parking session has already ended.");
+            case SessionExitStatus::completed:
+                break;
+            }
+
+            crow::json::wvalue response;
+            response["session"] = api::sessionFeeSummaryJson(result.fee_summary);
+            return crow::response(200, response);
+        }
+        catch (const std::exception &exception)
+        {
+            std::cerr << "Session exit failed: " << exception.what() << std::endl;
+            return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The parking session exit could not be processed.");
+        }
+    };
+
+    CROW_ROUTE(app, "/api/parking-sessions/<uint>/exit").methods(crow::HTTPMethod::POST)
+    (handleSessionExit);
+
+    CROW_ROUTE(app, "/api/parking-sessions/<uint>/checkout").methods(crow::HTTPMethod::POST)
+    (handleSessionExit);
+
+    auto handleSessionDetails = [&database](const crow::request &request, unsigned int session_id)
+    {
+        try
+        {
+            const auto user = findAuthenticatedUser(database, request);
+            if (!user)
+            {
+                return unauthorized();
+            }
+
+            const auto summary = database.getSessionFeeSummary(
+                user->user_id,
+                static_cast<std::int64_t>(session_id));
+
+            if (!summary.has_value())
+            {
+                return api::errorResponse(404, "SESSION_NOT_FOUND", "The parking session could not be found.");
+            }
+
+            crow::json::wvalue response;
+            response["session"] = api::sessionFeeSummaryJson(*summary);
+            return crow::response(200, response);
+        }
+        catch (const std::exception &exception)
+        {
+            std::cerr << "Session fee summary failed: " << exception.what() << std::endl;
+            return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The session fee summary could not be loaded.");
+        }
+    };
+
+    CROW_ROUTE(app, "/api/parking-sessions/<uint>/fee-summary").methods(crow::HTTPMethod::GET)
+    (handleSessionDetails);
+
+    CROW_ROUTE(app, "/api/parking-sessions/<uint>").methods(crow::HTTPMethod::GET)
+    (handleSessionDetails);
 }
 
 } // namespace routes

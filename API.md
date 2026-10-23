@@ -3,8 +3,8 @@
 ## Current status
 
 The API includes authentication, profiles, owner-scoped vehicle management,
-parking availability, reservations, manual reservation check-in, and active
-parking sessions.
+parking availability, reservations, manual reservation check-in, active
+parking sessions, manual exit, overstay billing, and fee summaries.
 
 | Component | Current status |
 | --- | --- |
@@ -219,6 +219,78 @@ unavailable returns `409` with a specific error code.
 Returns the authenticated user's active parking sessions with vehicle, slot,
 area, entry time, and reserved end time. Unauthenticated requests return `401
 UNAUTHENTICATED`.
+
+### `GET /api/parking-sessions/{session_id}/fee-summary`
+
+Returns the real-time fee breakdown or completed settlement details for the
+specified parking session owned by the authenticated user. If the session is
+active, it calculates the live elapsed duration, hourly rate, overstay duration
+(if actual time exceeds reserved end time), and total fee preview. Also accessible
+via `GET /api/parking-sessions/{session_id}`.
+
+Example response:
+
+```json
+{
+  "session": {
+    "session_id": 2,
+    "reservation_id": 3,
+    "vehicle_id": 1,
+    "registration_number": "KA01AB1234",
+    "vehicle_type": "car",
+    "slot_id": 32,
+    "slot_number": "1-B07",
+    "area_name": "Mall Central — First Floor",
+    "location": "Mall Central",
+    "entry_time": "2026-10-23T06:35:14Z",
+    "reserved_end_time": "2026-10-23T08:35:08Z",
+    "duration_minutes": 45,
+    "billed_hours": 1,
+    "overstay_duration_minutes": 0,
+    "billed_overstay_hours": 0,
+    "hourly_rate": 40.00,
+    "overstay_rate": 60.00,
+    "base_fee": 40.00,
+    "overstay_fee": 0.00,
+    "total_fee": 40.00,
+    "payment_status": "unpaid",
+    "status": "active"
+  }
+}
+```
+
+Unknown sessions or sessions belonging to another user return `404 SESSION_NOT_FOUND`.
+
+### `POST /api/parking-sessions/{session_id}/exit`
+
+Completes manual exit for an active parking session owned by the authenticated
+user. Also accessible via alias `POST /api/parking-sessions/{session_id}/checkout`.
+
+The request body optionally accepts:
+
+```json
+{
+  "payment_action": "paid_manually"
+}
+```
+
+Supported `payment_action` values are:
+- `"paid_manually"` (default): marks the payment as settled at the counter via cash/POS.
+- `"unpaid"`: records the fee as pending payment.
+- `"waived"`: waives the fee.
+
+The operation atomically:
+1. Records `exit_time` and calculates total duration and overstay minutes.
+2. Applies rate rules from `parking_rates` (hourly rate + overstay rate).
+3. Updates `parking_sessions` status to `completed` (or `overstayed`).
+4. Updates `reservations` status to `completed`.
+5. Releases the slot back to `available` (or `maintenance` if scheduled).
+6. Creates a payment entry in `payments`.
+
+Returns `200 OK` with the full fee summary object.
+
+Sessions that are already ended return `409 SESSION_ALREADY_COMPLETED`.
+Sessions not owned by the caller return `404 SESSION_NOT_FOUND`.
 
 ### `DELETE /api/reservations/{reservation_id}`
 
@@ -436,7 +508,6 @@ The following areas are planned, not implemented:
 
 - Parking-area, slot, and rate management writes
 - QR-token check-in
-- Parking-session checkout
 - Payments, receipts, and notifications
 
 Request and response contracts should be added here only when their routes are

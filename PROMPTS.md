@@ -147,6 +147,42 @@ Commit reference: `1029993 feat: complete phase 3 vehicle parking` (merged in PR
 
 ---
 
+---
+
+## Phase 7: Manual exit, basic overstay billing, and fee summary (Version 1)
+
+### Prompt 1: Database index and fee serialization
+
+> Implement Phase 7 manual exit, overstay billing, and fee summary in PostgreSQL and C++ Crow: create `database/phase7_session_exit.sql` adding an index on `payments(session_id)`. Create `backend/src/api/session_responses.h` with serialization helpers for session exits and fee summaries (`sessionFeeSummaryJson`). Add unit test assertions in `backend/tests/api_tests.cpp`.
+
+**Result:** `database/phase7_session_exit.sql`, `backend/src/api/session_responses.h`, `backend/tests/api_tests.cpp`.
+
+### Prompt 2: Transactional session exit and fee calculation logic
+
+> In `backend/src/database/` (`database.h`, `database.cpp`), implement `Database::exitParkingSession` and `Database::getSessionFeeSummary`. The exit operation must atomically: lock the session, reservation, slot, and rates; calculate duration in minutes and billed hours (minimum 1 hour); calculate overstay duration in minutes and billed overstay hours if actual exit time exceeds reserved end time; apply rate rules (`hourly_rate`, `overstay_rate`); update session status (`completed` or `overstayed`); mark reservation completed; release slot back to `available` (or `maintenance` if scheduled); and record the settlement in `payments` (`paid_manually`, `unpaid`, or `waived`).
+
+**Result:** `backend/src/database/database.h`, `backend/src/database/database.cpp`.
+
+### Prompt 3: Session exit and fee summary REST endpoints
+
+> Expose `POST /api/parking-sessions/{session_id}/exit` (with alias `POST /api/parking-sessions/{session_id}/checkout`) and `GET /api/parking-sessions/{session_id}/fee-summary` in Crow backend under `backend/src/routes/reservation_routes.cpp`. Protect endpoints with authentication and verify ownership. Return 404 for unknown/cross-user sessions and 409 for already completed sessions.
+
+**Result:** `POST /api/parking-sessions/<uint>/exit`, `GET /api/parking-sessions/<uint>/fee-summary`, `backend/src/routes/reservation_routes.cpp`.
+
+### Prompt 4: Frontend session checkout modal and live fee breakdown
+
+> Extend `frontend/index.html`, `frontend/css/style.css`, and `frontend/js/reservations.js` to render "Fee summary" and "Check out / Exit" buttons on active session cards. Provide a modern modal showing vehicle info, entry time, reserved end time, duration, overstay warnings, rate rules, base fee, overstay fee, and total amount. In checkout mode, allow selecting payment status (`paid_manually`, `unpaid`, `waived`), submit exit request, display confirmation, and refresh parking availability and session cards.
+
+**Result:** `frontend/index.html`, `frontend/css/style.css`, `frontend/js/reservations.js`.
+
+### Prompt 5: End-to-end integration and verification
+
+> Create `scratch/test_phase7_e2e.py` verifying the full lifecycle against PostgreSQL and Crow: user registration, vehicle creation, reservation booking, check-in, live fee preview, exit processing, payment recording, duplicate exit rejection (409), slot liberation, and unauthenticated/cross-user isolation. Update `API.md` and `planning.md`.
+
+**Result:** `scratch/test_phase7_e2e.py`, `API.md`, `planning.md`.
+
+---
+
 ## Notes
 
 - Phase 2 status in `planning.md`: runtime verification and end-to-end

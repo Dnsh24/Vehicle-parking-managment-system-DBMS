@@ -224,7 +224,26 @@ function renderActiveParkingSessions(sessions) {
         status.className = "reservation-status";
         status.textContent = "Active";
         details.append(title, description, status);
-        card.append(details);
+
+        const actions = document.createElement("div");
+        actions.className = "reservation-actions";
+
+        const feeBtn = document.createElement("button");
+        feeBtn.type = "button";
+        feeBtn.className = "vehicle-cancel";
+        feeBtn.dataset.action = "fee-summary";
+        feeBtn.dataset.sessionId = session.session_id;
+        feeBtn.textContent = "Fee summary";
+
+        const exitBtn = document.createElement("button");
+        exitBtn.type = "button";
+        exitBtn.className = "refresh-button";
+        exitBtn.dataset.action = "exit";
+        exitBtn.dataset.sessionId = session.session_id;
+        exitBtn.textContent = "Check out / Exit";
+
+        actions.append(feeBtn, exitBtn);
+        card.append(details, actions);
         activeParkingSessions.append(card);
     });
 }
@@ -416,5 +435,201 @@ if (reservationList) {
 if (refreshReservationsButton) {
     refreshReservationsButton.addEventListener("click", () => {
         Promise.all([loadReservations(), loadActiveParkingSessions()]);
+    });
+}
+const sessionExitDialog = document.getElementById("sessionExitDialog");
+const exitModalTitle = document.getElementById("exitModalTitle");
+const exitModalBody = document.getElementById("exitModalBody");
+const closeExitDialogButton = document.getElementById("closeExitDialogButton");
+
+if (closeExitDialogButton && sessionExitDialog) {
+    closeExitDialogButton.addEventListener("click", () => {
+        sessionExitDialog.close();
+    });
+}
+
+async function showSessionExitModal(sessionId, isCheckoutMode) {
+    if (!sessionExitDialog || !exitModalBody) return;
+
+    if (exitModalTitle) {
+        exitModalTitle.textContent = isCheckoutMode
+            ? "Confirm Vehicle Exit & Settle Fee"
+            : "Live Session Fee Summary";
+    }
+
+    exitModalBody.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "muted";
+    loading.textContent = "Calculating current duration and fees...";
+    exitModalBody.append(loading);
+
+    sessionExitDialog.showModal();
+
+    try {
+        const response = await fetch(`${API_BASE}/api/parking-sessions/${encodeURIComponent(sessionId)}/fee-summary`, {
+            headers: authHeaders()
+        });
+        const data = await response.json();
+        if (!response.ok || !data.session) {
+            throw new Error(data.error?.message || "Failed to load session fee summary.");
+        }
+
+        const summary = data.session;
+        exitModalBody.replaceChildren();
+
+        const card = document.createElement("div");
+        card.className = "fee-breakdown-card";
+
+        const headerRow = document.createElement("div");
+        headerRow.className = "fee-breakdown-row";
+        headerRow.innerHTML = `<strong>${summary.registration_number} (${summary.vehicle_type.toUpperCase()})</strong><span>${summary.area_name} · ${summary.slot_number}</span>`;
+        card.append(headerRow);
+
+        const timeRow = document.createElement("div");
+        timeRow.className = "fee-breakdown-row";
+        timeRow.innerHTML = `<span class="muted">Entry Time</span><span>${formatIsoTimestamp(summary.entry_time)}</span>`;
+        card.append(timeRow);
+
+        const reservedRow = document.createElement("div");
+        reservedRow.className = "fee-breakdown-row";
+        reservedRow.innerHTML = `<span class="muted">Reserved Until</span><span>${formatIsoTimestamp(summary.reserved_end_time)}</span>`;
+        card.append(reservedRow);
+
+        const durRow = document.createElement("div");
+        durRow.className = "fee-breakdown-row";
+        durRow.innerHTML = `<span class="muted">Parking Duration</span><span>${summary.duration_minutes} min (billed as ${summary.billed_hours} hr)</span>`;
+        card.append(durRow);
+
+        const baseFeeRow = document.createElement("div");
+        baseFeeRow.className = "fee-breakdown-row";
+        baseFeeRow.innerHTML = `<span>Base Parking Fee (${summary.billed_hours}h × ₹${summary.hourly_rate.toFixed(2)})</span><span>₹${summary.base_fee.toFixed(2)}</span>`;
+        card.append(baseFeeRow);
+
+        if (summary.overstay_duration_minutes > 0) {
+            const overstayWarning = document.createElement("div");
+            overstayWarning.className = "fee-overstay-warning";
+            overstayWarning.textContent = `⚠ Overstayed reserved time by ${summary.overstay_duration_minutes} min (billed as ${summary.billed_overstay_hours} hr @ ₹${summary.overstay_rate.toFixed(2)}/hr)`;
+            card.append(overstayWarning);
+
+            const overstayFeeRow = document.createElement("div");
+            overstayFeeRow.className = "fee-breakdown-row";
+            overstayFeeRow.innerHTML = `<span>Overstay Charge</span><span>₹${summary.overstay_fee.toFixed(2)}</span>`;
+            card.append(overstayFeeRow);
+        }
+
+        const totalRow = document.createElement("div");
+        totalRow.className = "fee-breakdown-row total";
+        totalRow.innerHTML = `<span>Total Fee</span><span>₹${summary.total_fee.toFixed(2)}</span>`;
+        card.append(totalRow);
+
+        exitModalBody.append(card);
+
+        if (isCheckoutMode) {
+            const paymentSec = document.createElement("div");
+            paymentSec.className = "exit-payment-section";
+            const label = document.createElement("label");
+            label.htmlFor = "exitPaymentActionSelect";
+            label.textContent = "Payment Option";
+
+            const select = document.createElement("select");
+            select.id = "exitPaymentActionSelect";
+            select.innerHTML = `
+                <option value="payment_at_desk">Payment at desk</option>
+                <option value="online_payment">Online payment</option>
+            `;
+            paymentSec.append(label, select);
+            exitModalBody.append(paymentSec);
+
+            const actionSec = document.createElement("div");
+            actionSec.className = "exit-modal-actions";
+
+            const cancelBtn = document.createElement("button");
+            cancelBtn.type = "button";
+            cancelBtn.className = "vehicle-cancel";
+            cancelBtn.textContent = "Cancel";
+            cancelBtn.addEventListener("click", () => sessionExitDialog.close());
+
+            const confirmBtn = document.createElement("button");
+            confirmBtn.type = "button";
+            confirmBtn.className = "refresh-button";
+            confirmBtn.textContent = "Confirm Exit & Release Slot";
+            confirmBtn.addEventListener("click", async () => {
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = "Processing exit...";
+                try {
+                    const exitRes = await fetch(`${API_BASE}/api/parking-sessions/${encodeURIComponent(sessionId)}/exit`, {
+                        method: "POST",
+                        headers: {
+                            ...authHeaders(),
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            payment_action: select.value
+                        })
+                    });
+                    const exitData = await exitRes.json();
+                    if (!exitRes.ok || !exitData.session) {
+                        throw new Error(exitData.error?.message || "Failed to process vehicle exit.");
+                    }
+                    sessionExitDialog.close();
+                    setReservationMessage(
+                        `Vehicle ${exitData.session.registration_number} checked out successfully! Slot ${exitData.session.slot_number} has been released. Total fee: ₹${exitData.session.total_fee.toFixed(2)} (${exitData.session.payment_status}).`
+                    );
+                    await Promise.all([
+                        loadReservations(),
+                        loadActiveParkingSessions()
+                    ]);
+                    if (typeof loadAreas === "function") {
+                        await loadAreas();
+                    }
+                } catch (err) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = "Confirm Exit & Release Slot";
+                    alert(err.message);
+                }
+            });
+
+            actionSec.append(cancelBtn, confirmBtn);
+            exitModalBody.append(actionSec);
+        } else {
+            const actionSec = document.createElement("div");
+            actionSec.className = "exit-modal-actions";
+
+            const closeBtn = document.createElement("button");
+            closeBtn.type = "button";
+            closeBtn.className = "vehicle-cancel";
+            closeBtn.textContent = "Close";
+            closeBtn.addEventListener("click", () => sessionExitDialog.close());
+
+            const proceedBtn = document.createElement("button");
+            proceedBtn.type = "button";
+            proceedBtn.className = "refresh-button";
+            proceedBtn.textContent = "Proceed to Check out";
+            proceedBtn.addEventListener("click", () => {
+                showSessionExitModal(sessionId, true);
+            });
+
+            actionSec.append(closeBtn, proceedBtn);
+            exitModalBody.append(actionSec);
+        }
+    } catch (err) {
+        exitModalBody.replaceChildren();
+        const errP = document.createElement("p");
+        errP.className = "muted";
+        errP.textContent = err.message;
+        exitModalBody.append(errP);
+    }
+}
+
+if (activeParkingSessions) {
+    activeParkingSessions.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        const sessionId = button.dataset.sessionId;
+        if (button.dataset.action === "fee-summary") {
+            showSessionExitModal(sessionId, false);
+        } else if (button.dataset.action === "exit") {
+            showSessionExitModal(sessionId, true);
+        }
     });
 }

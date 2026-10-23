@@ -3,6 +3,8 @@
 #include "api/errors.h"
 #include "api/parking_responses.h"
 #include "api/vehicle_responses.h"
+#include "api/session_responses.h"
+#include <algorithm>
 #include "validation/validation.h"
 
 #include <iostream>
@@ -224,6 +226,101 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The vehicle could not be parked.");
         } });
 
+    CROW_ROUTE(app, "/api/vehicles/<uint>/fee-summary").methods(crow::HTTPMethod::GET)
+    ([&database](const crow::request &request, unsigned int vehicle_id)
+     {
+        try
+        {
+            const auto user = findAuthenticatedUser(database, request);
+            if (!user)
+            {
+                return unauthorized();
+            }
+
+            // Check if vehicle has an active parking session
+            const pqxx::result session_rows = database.executeRead(
+                "SELECT session_id FROM parking_sessions "
+                "WHERE vehicle_id = $1 AND user_id = $2 AND exit_time IS NULL AND status IN ('active', 'overstayed')",
+                pqxx::params{vehicle_id, user->user_id});
+
+            if (!session_rows.empty())
+            {
+                const std::int64_t session_id = session_rows[0]["session_id"].as<std::int64_t>();
+                const auto summary = database.getSessionFeeSummary(user->user_id, session_id);
+                if (summary.has_value())
+                {
+                    crow::json::wvalue response;
+                    response["session"] = api::sessionFeeSummaryJson(*summary);
+                    return crow::response(200, response);
+                }
+            }
+
+            // Check if vehicle has an active direct parking assignment
+            const pqxx::result assign_rows = database.executeRead(
+                "SELECT a.assignment_id, a.slot_id, ps.slot_number, ps.slot_type, ps.area_id, "
+                "pa.name AS area_name, pa.location, "
+                "v.registration_number, v.vehicle_type, "
+                "to_char(a.parked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS entry_time_str, "
+                "to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS exit_time_str, "
+                "GREATEST(1, CEIL(EXTRACT(EPOCH FROM (clock_timestamp() - a.parked_at)) / 60.0)::INTEGER) AS duration_minutes, "
+                "COALESCE(pr.hourly_rate, 40.00) AS hourly_rate, "
+                "COALESCE(pr.overstay_rate, 60.00) AS overstay_rate "
+                "FROM parking_assignments a "
+                "JOIN vehicles v ON v.vehicle_id = a.vehicle_id "
+                "JOIN parking_slots ps ON ps.slot_id = a.slot_id "
+                "JOIN parking_areas pa ON pa.area_id = ps.area_id "
+                "LEFT JOIN parking_rates pr ON pr.area_id = pa.area_id "
+                "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type "
+                "WHERE a.vehicle_id = $1 AND a.user_id = $2 AND a.checkout_at IS NULL",
+                pqxx::params{vehicle_id, user->user_id});
+
+            if (assign_rows.empty())
+            {
+                return api::errorResponse(404, "ACTIVE_PARKING_NOT_FOUND", "This vehicle is not currently parked.");
+            }
+
+            const auto &row = assign_rows[0];
+            const int duration_minutes = row["duration_minutes"].as<int>();
+            const int billed_hours = std::max(1, (duration_minutes + 59) / 60);
+            const double hourly_rate = row["hourly_rate"].as<double>();
+            const double overstay_rate = row["overstay_rate"].as<double>();
+            const double base_fee = billed_hours * hourly_rate;
+
+            api::SessionFeeSummaryData summary;
+            summary.session_id = 0;
+            summary.reservation_id = 0;
+            summary.vehicle_id = static_cast<std::int64_t>(vehicle_id);
+            summary.registration_number = row["registration_number"].as<std::string>();
+            summary.vehicle_type = row["vehicle_type"].as<std::string>();
+            summary.slot_id = row["slot_id"].as<std::int64_t>();
+            summary.slot_number = row["slot_number"].as<std::string>();
+            summary.area_name = row["area_name"].as<std::string>();
+            summary.location = row["location"].as<std::string>();
+            summary.entry_time = row["entry_time_str"].as<std::string>();
+            summary.exit_time = row["exit_time_str"].as<std::string>();
+            summary.reserved_end_time = "";
+            summary.duration_minutes = duration_minutes;
+            summary.billed_hours = billed_hours;
+            summary.overstay_duration_minutes = 0;
+            summary.billed_overstay_hours = 0;
+            summary.hourly_rate = hourly_rate;
+            summary.overstay_rate = overstay_rate;
+            summary.base_fee = base_fee;
+            summary.overstay_fee = 0.0;
+            summary.total_fee = base_fee;
+            summary.payment_status = "unpaid";
+            summary.session_status = "active";
+
+            crow::json::wvalue response;
+            response["session"] = api::sessionFeeSummaryJson(summary);
+            return crow::response(200, response);
+        }
+        catch (const std::exception &exception)
+        {
+            std::cerr << "Vehicle fee summary failed: " << exception.what() << std::endl;
+            return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The vehicle fee summary could not be calculated.");
+        } });
+
     CROW_ROUTE(app, "/api/vehicles/<uint>/checkout").methods(crow::HTTPMethod::POST)
     ([&database](const crow::request &request, unsigned int vehicle_id)
      {
@@ -234,12 +331,77 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             {
                 return unauthorized();
             }
-            const pqxx::result rows = database.executeWrite(
-                "WITH completed AS ("
+
+            std::string payment_action = "payment_at_desk";
+            if (!request.body.empty())
+            {
+                const auto body = crow::json::load(request.body);
+                if (body && body.has("payment_action") && body["payment_action"].t() == crow::json::type::String)
+                {
+                    payment_action = body["payment_action"].s();
+                }
+            }
+
+            // If parked via session, delegate to exitParkingSession
+            const pqxx::result session_rows = database.executeRead(
+                "SELECT session_id FROM parking_sessions "
+                "WHERE vehicle_id = $1 AND user_id = $2 AND exit_time IS NULL AND status IN ('active', 'overstayed')",
+                pqxx::params{vehicle_id, user->user_id});
+
+            if (!session_rows.empty())
+            {
+                const std::int64_t session_id = session_rows[0]["session_id"].as<std::int64_t>();
+                const SessionExitResult exit_res = database.exitParkingSession(user->user_id, session_id, payment_action);
+                if (exit_res.status == SessionExitStatus::completed)
+                {
+                    crow::json::wvalue response;
+                    response["message"] = "Vehicle checked out and slot released.";
+                    response["session"] = api::sessionFeeSummaryJson(exit_res.fee_summary);
+                    response["slot_id"] = exit_res.fee_summary.slot_id;
+                    return crow::response(200, response);
+                }
+            }
+
+            // Otherwise checkout from direct parking_assignments
+            const pqxx::result assign_rows = database.executeRead(
+                "SELECT a.assignment_id, a.slot_id, ps.slot_number, ps.slot_type, ps.area_id, "
+                "pa.name AS area_name, pa.location, "
+                "v.registration_number, v.vehicle_type, "
+                "to_char(a.parked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS entry_time_str, "
+                "to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS exit_time_str, "
+                "GREATEST(1, CEIL(EXTRACT(EPOCH FROM (clock_timestamp() - a.parked_at)) / 60.0)::INTEGER) AS duration_minutes, "
+                "COALESCE(pr.hourly_rate, 40.00) AS hourly_rate, "
+                "COALESCE(pr.overstay_rate, 60.00) AS overstay_rate "
+                "FROM parking_assignments a "
+                "JOIN vehicles v ON v.vehicle_id = a.vehicle_id "
+                "JOIN parking_slots ps ON ps.slot_id = a.slot_id "
+                "JOIN parking_areas pa ON pa.area_id = ps.area_id "
+                "LEFT JOIN parking_rates pr ON pr.area_id = pa.area_id "
+                "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type "
+                "WHERE a.vehicle_id = $1 AND a.user_id = $2 AND a.checkout_at IS NULL",
+                pqxx::params{vehicle_id, user->user_id});
+
+            if (assign_rows.empty())
+            {
+                return api::errorResponse(404, "ACTIVE_PARKING_NOT_FOUND", "This vehicle has no active parking assignment.");
+            }
+
+            const auto &row = assign_rows[0];
+            const std::int64_t slot_id = row["slot_id"].as<std::int64_t>();
+            const std::int64_t area_id = row["area_id"].as<std::int64_t>();
+            const std::string exit_time_str = row["exit_time_str"].as<std::string>();
+            const int duration_minutes = row["duration_minutes"].as<int>();
+            const int billed_hours = std::max(1, (duration_minutes + 59) / 60);
+            const double hourly_rate = row["hourly_rate"].as<double>();
+            const double base_fee = billed_hours * hourly_rate;
+            const double total_fee = base_fee;
+
+            database.executeWrite(
                 "UPDATE parking_assignments SET checkout_at = CURRENT_TIMESTAMP "
-                "WHERE vehicle_id = $1 AND user_id = $2 AND checkout_at IS NULL "
-                "RETURNING slot_id, checkout_at"
-                "), freed AS ("
+                "WHERE vehicle_id = $1 AND user_id = $2 AND checkout_at IS NULL",
+                pqxx::params{vehicle_id, user->user_id});
+
+            database.executeWrite(
                 "UPDATE parking_slots ps SET status = CASE "
                 "WHEN EXISTS (SELECT 1 FROM parking_sessions s "
                 "WHERE s.slot_id = ps.slot_id AND s.exit_time IS NULL "
@@ -248,21 +410,40 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 "WHERE r.slot_id = ps.slot_id AND r.status IN ('pending', 'confirmed', 'active') "
                 "AND r.start_time <= CURRENT_TIMESTAMP AND r.end_time > CURRENT_TIMESTAMP) THEN 'reserved' "
                 "ELSE 'available' END "
-                "FROM completed c WHERE ps.slot_id = c.slot_id AND ps.status = 'occupied' "
-                "RETURNING ps.slot_id"
-                ") "
-                "SELECT c.slot_id, c.checkout_at, ps.area_id "
-                "FROM completed c JOIN parking_slots ps ON ps.slot_id = c.slot_id",
-                pqxx::params{vehicle_id, user->user_id});
-            if (rows.empty())
-            {
-                return api::errorResponse(404, "ACTIVE_PARKING_NOT_FOUND", "This vehicle has no active parking assignment.");
-            }
+                "WHERE ps.slot_id = $1",
+                pqxx::params{slot_id});
+
+            api::SessionFeeSummaryData summary;
+            summary.session_id = 0;
+            summary.reservation_id = 0;
+            summary.vehicle_id = static_cast<std::int64_t>(vehicle_id);
+            summary.registration_number = row["registration_number"].as<std::string>();
+            summary.vehicle_type = row["vehicle_type"].as<std::string>();
+            summary.slot_id = slot_id;
+            summary.slot_number = row["slot_number"].as<std::string>();
+            summary.area_name = row["area_name"].as<std::string>();
+            summary.location = row["location"].as<std::string>();
+            summary.entry_time = row["entry_time_str"].as<std::string>();
+            summary.exit_time = exit_time_str;
+            summary.reserved_end_time = "";
+            summary.duration_minutes = duration_minutes;
+            summary.billed_hours = billed_hours;
+            summary.overstay_duration_minutes = 0;
+            summary.billed_overstay_hours = 0;
+            summary.hourly_rate = hourly_rate;
+            summary.overstay_rate = row["overstay_rate"].as<double>();
+            summary.base_fee = base_fee;
+            summary.overstay_fee = 0.0;
+            summary.total_fee = total_fee;
+            summary.payment_status = payment_action;
+            summary.session_status = "completed";
+
             crow::json::wvalue response;
             response["message"] = "Vehicle checked out and slot released.";
-            response["slot_id"] = rows[0]["slot_id"].as<std::int64_t>();
-            response["area_id"] = rows[0]["area_id"].as<std::int64_t>();
-            response["checkout_at"] = rows[0]["checkout_at"].c_str();
+            response["slot_id"] = slot_id;
+            response["area_id"] = area_id;
+            response["checkout_at"] = exit_time_str;
+            response["session"] = api::sessionFeeSummaryJson(summary);
             return crow::response(response);
         }
         catch (const std::exception &exception)

@@ -175,30 +175,7 @@ if (vehicleList) {
             return;
         }
         if (button.dataset.action === "checkout") {
-            try {
-                const response = await fetch(`${API_BASE}/api/vehicles/${encodeURIComponent(vehicleId)}/checkout`, {
-                    method: "POST",
-                    headers: authHeaders()
-                });
-                const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data.error?.message || "The vehicle could not be checked out.");
-                }
-                await loadVehicles();
-                setVehicleMessage(data.message || "Vehicle checked out.");
-                const parkingArea = areas.find((area) => String(area.area_id) === String(data.area_id));
-                if (parkingArea) {
-                    await loadFloor(parkingArea);
-                    const releasedSlot = parkingMap.querySelector(
-                        `[data-slot-id="${CSS.escape(String(data.slot_id))}"]`
-                    );
-                    if (releasedSlot) {
-                        selectSlot(releasedSlot);
-                    }
-                }
-            } catch (error) {
-                setVehicleMessage(error.message, true);
-            }
+            showVehicleExitModal(vehicleId);
             return;
         }
         if (button.dataset.action === "edit") {
@@ -368,5 +345,170 @@ async function parkVehicleInSlot(vehicleId, slotId) {
             selectedElement.removeAttribute("aria-disabled");
         }
         setVehicleMessage(error.message, true);
+    }
+}
+async function showVehicleExitModal(vehicleId) {
+    const sessionExitDialog = document.getElementById("sessionExitDialog");
+    const exitModalTitle = document.getElementById("exitModalTitle");
+    const exitModalBody = document.getElementById("exitModalBody");
+
+    if (!sessionExitDialog || !exitModalBody) return;
+
+    if (exitModalTitle) {
+        exitModalTitle.textContent = "Vehicle Check Out & Fee Summary";
+    }
+
+    exitModalBody.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "muted";
+    loading.textContent = "Calculating current duration and fees...";
+    exitModalBody.append(loading);
+
+    sessionExitDialog.showModal();
+
+    try {
+        const response = await fetch(`${API_BASE}/api/vehicles/${encodeURIComponent(vehicleId)}/fee-summary`, {
+            headers: authHeaders()
+        });
+        const data = await response.json();
+        if (!response.ok || !data.session) {
+            throw new Error(data.error?.message || "Failed to load fee summary for this vehicle.");
+        }
+
+        const summary = data.session;
+        exitModalBody.replaceChildren();
+
+        const card = document.createElement("div");
+        card.className = "fee-breakdown-card";
+
+        const headerRow = document.createElement("div");
+        headerRow.className = "fee-breakdown-row";
+        headerRow.innerHTML = `<strong>${summary.registration_number} (${summary.vehicle_type.toUpperCase()})</strong><span>${summary.area_name} · ${summary.slot_number}</span>`;
+        card.append(headerRow);
+
+        const timeRow = document.createElement("div");
+        timeRow.className = "fee-breakdown-row";
+        timeRow.innerHTML = `<span class="muted">Entry Time</span><span>${formatIsoTimestamp(summary.entry_time)}</span>`;
+        card.append(timeRow);
+
+        if (summary.reserved_end_time) {
+            const reservedRow = document.createElement("div");
+            reservedRow.className = "fee-breakdown-row";
+            reservedRow.innerHTML = `<span class="muted">Reserved Until</span><span>${formatIsoTimestamp(summary.reserved_end_time)}</span>`;
+            card.append(reservedRow);
+        }
+
+        const durRow = document.createElement("div");
+        durRow.className = "fee-breakdown-row";
+        durRow.innerHTML = `<span class="muted">Parking Duration</span><span>${summary.duration_minutes} min (billed as ${summary.billed_hours} hr)</span>`;
+        card.append(durRow);
+
+        const baseFeeRow = document.createElement("div");
+        baseFeeRow.className = "fee-breakdown-row";
+        baseFeeRow.innerHTML = `<span>Base Parking Fee (${summary.billed_hours}h × ₹${Number(summary.hourly_rate).toFixed(2)})</span><span>₹${Number(summary.base_fee).toFixed(2)}</span>`;
+        card.append(baseFeeRow);
+
+        if (summary.overstay_duration_minutes > 0) {
+            const overstayWarning = document.createElement("div");
+            overstayWarning.className = "fee-overstay-warning";
+            overstayWarning.textContent = `⚠ Overstayed reserved time by ${summary.overstay_duration_minutes} min (billed as ${summary.billed_overstay_hours} hr @ ₹${Number(summary.overstay_rate).toFixed(2)}/hr)`;
+            card.append(overstayWarning);
+
+            const overstayFeeRow = document.createElement("div");
+            overstayFeeRow.className = "fee-breakdown-row";
+            overstayFeeRow.innerHTML = `<span>Overstay Charge</span><span>₹${Number(summary.overstay_fee).toFixed(2)}</span>`;
+            card.append(overstayFeeRow);
+        }
+
+        const totalRow = document.createElement("div");
+        totalRow.className = "fee-breakdown-row total";
+        totalRow.innerHTML = `<span>Total Fee to Pay</span><span>₹${Number(summary.total_fee).toFixed(2)}</span>`;
+        card.append(totalRow);
+
+        exitModalBody.append(card);
+
+        const paymentSec = document.createElement("div");
+        paymentSec.className = "exit-payment-section";
+        const label = document.createElement("label");
+        label.htmlFor = "exitPaymentActionSelect";
+        label.textContent = "Payment Option";
+
+        const select = document.createElement("select");
+        select.id = "exitPaymentActionSelect";
+        select.innerHTML = `
+            <option value="payment_at_desk">Payment at desk</option>
+            <option value="online_payment">Online payment</option>
+        `;
+        paymentSec.append(label, select);
+        exitModalBody.append(paymentSec);
+
+        const actionSec = document.createElement("div");
+        actionSec.className = "exit-modal-actions";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "vehicle-cancel";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", () => sessionExitDialog.close());
+
+        const confirmBtn = document.createElement("button");
+        confirmBtn.type = "button";
+        confirmBtn.className = "refresh-button";
+        confirmBtn.textContent = "Confirm Exit & Release Slot";
+        confirmBtn.addEventListener("click", async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = "Processing exit...";
+            try {
+                const checkoutRes = await fetch(`${API_BASE}/api/vehicles/${encodeURIComponent(vehicleId)}/checkout`, {
+                    method: "POST",
+                    headers: {
+                        ...authHeaders(),
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        payment_action: select.value
+                    })
+                });
+                const checkoutData = await checkoutRes.json();
+                if (!checkoutRes.ok) {
+                    throw new Error(checkoutData.error?.message || "Failed to check out vehicle.");
+                }
+
+                sessionExitDialog.close();
+                const finalFee = checkoutData.session ? ` Total fee: ₹${Number(checkoutData.session.total_fee).toFixed(2)}.` : "";
+                setVehicleMessage(`Vehicle ${summary.registration_number} checked out successfully! Slot ${summary.slot_number} released.${finalFee}`);
+
+                await loadVehicles();
+                if (typeof loadActiveParkingSessions === "function") {
+                    await loadActiveParkingSessions();
+                }
+                if (typeof loadReservations === "function") {
+                    await loadReservations();
+                }
+                const parkingArea = areas.find((area) => String(area.area_id) === String(checkoutData.area_id));
+                if (parkingArea) {
+                    await loadFloor(parkingArea);
+                    const releasedSlot = parkingMap.querySelector(
+                        `[data-slot-id="${CSS.escape(String(checkoutData.slot_id))}"]`
+                    );
+                    if (releasedSlot) {
+                        selectSlot(releasedSlot);
+                    }
+                }
+            } catch (err) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = "Confirm Exit & Release Slot";
+                alert(err.message);
+            }
+        });
+
+        actionSec.append(cancelBtn, confirmBtn);
+        exitModalBody.append(actionSec);
+    } catch (err) {
+        exitModalBody.replaceChildren();
+        const errP = document.createElement("p");
+        errP.className = "muted";
+        errP.textContent = err.message;
+        exitModalBody.append(errP);
     }
 }

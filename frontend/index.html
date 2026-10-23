@@ -562,6 +562,18 @@
       </section>
     </main>
 
+    <dialog id="sessionExitDialog" class="exit-modal">
+      <div class="exit-modal-content">
+        <div class="exit-modal-header">
+          <h3 id="exitModalTitle">Vehicle Check Out & Fee Summary</h3>
+          <button type="button" id="closeExitDialogButton" class="exit-modal-close" aria-label="Close">✕</button>
+        </div>
+        <div id="exitModalBody" class="exit-modal-body">
+          <p class="muted">Loading fee calculation...</p>
+        </div>
+      </div>
+    </dialog>
+
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/parking.js"></script>

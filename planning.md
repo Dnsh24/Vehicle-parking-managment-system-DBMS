@@ -381,21 +381,25 @@ References: `reservations` and `parking_sessions` in
 
 #### Phase 7: Manual exit, basic overstay billing, and fee summary
 
-- Backend: transactional exit, duration, basic overstay calculation, and fee
-  summary generation.
-- Frontend: exit confirmation, entry and exit times, overstay duration, and
-  fee breakdown.
-- Use the Version 1 rule:
+**Status:** Completed. Transactional manual exit, real-time fee preview, overstay
+calculation, payment status recording, unit tests, and live end-to-end flows are
+implemented and verified.
 
+- Backend: transactional exit, duration, basic overstay calculation, rate rule
+  resolution, and fee summary generation (`POST /api/parking-sessions/{id}/exit`,
+  `GET /api/parking-sessions/{id}/fee-summary`).
+- Frontend: active session fee summary modal, real-time fee breakdown with
+  overstay alerts, payment settlement option (`paid_manually`, `unpaid`, `waived`),
+  and automated slot liberation on the live map.
+- Implemented Version 1 fee calculation rule:
   ```text
   overstay_duration = max(0, actual_exit_time - reserved_end_time)
   total_fee = parking_duration × hourly_rate + overstay_duration × overstay_rate
   ```
-
-- Record the fee as unpaid, paid manually, or waived. Do not integrate an
-  online payment gateway in Version 1.
-- Test normal exit, overstay, duplicate exit, invalid session ownership, and
-  fee calculation boundaries.
+- Recorded payment in `payments` table and updated slot and reservation states
+  atomically within a single transaction.
+- Verified normal exit, overstay calculations, duplicate exit rejection (409),
+  ownership isolation (404), unauthenticated rejection (401), and slot liberation.
 
 References: `parking_sessions` and `parking_rates` in [database.md](database.md).
 
