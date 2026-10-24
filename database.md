@@ -285,10 +285,16 @@ idx_notifications_user_id (user_id)
 idx_notifications_unread (user_id, is_read)
 ```
 
+The Phase 8 migration `database/phase8_history_notifications.sql` also adds
+`idx_notifications_user_created (user_id, created_at DESC, notification_id DESC)`
+and a partial `idx_notifications_unread_user (user_id) WHERE is_read = FALSE`
+for paginated notification retrieval and unread counts.
+
 These indexes support likely lookup patterns; performance improvements have not
 been benchmarked. Transactions are used by the schema file while creating the
-objects. Application transactions for reservations, sessions, or payments
-remain to be implemented.
+objects. Reservation creation/cancellation, check-in, and session exit use
+application transactions; related notifications are inserted atomically with
+those workflow changes.
 
 ## Phase 1 development seed
 

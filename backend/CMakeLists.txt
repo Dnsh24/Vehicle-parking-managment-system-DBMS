@@ -98,8 +98,12 @@ if(BUILD_TESTING)
 
     target_link_libraries(database_tests
         PRIVATE
+        Crow::Crow
         libpqxx::pqxx
     )
+    if(WIN32)
+        target_link_libraries(database_tests PRIVATE ws2_32)
+    endif()
 
     add_test(NAME database_tests COMMAND database_tests)
 

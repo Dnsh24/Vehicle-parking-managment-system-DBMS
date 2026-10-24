@@ -12,6 +12,8 @@ const registerSwitch = document.getElementById("registerSwitch");
 const loginSwitch = document.getElementById("loginSwitch");
 const authError = document.getElementById("authError");
 const logoutButton = document.getElementById("logoutButton");
+const accountButton = document.getElementById("accountButton");
+const accountPopover = document.getElementById("accountPopover");
 const topbar = document.getElementById("topbar");
 const forgotPasswordButton = document.getElementById("forgotPasswordButton");
 const passwordToggles = document.querySelectorAll("[data-password-toggle]");
@@ -112,9 +114,13 @@ function showAuthenticatedUser(user, openAdminDirectly = false) {
     currentUser = user;
     if (authGate) authGate.setAttribute("hidden", "");
     if (topbar) topbar.hidden = false;
-    if (logoutButton) {
-        logoutButton.textContent = user.name ? user.name.slice(0, 2).toUpperCase() : "U";
+    if (accountButton) {
+        accountButton.textContent = user.name ? user.name.slice(0, 2).toUpperCase() : "U";
     }
+    const accountName = document.getElementById("accountName");
+    const accountEmail = document.getElementById("accountEmail");
+    if (accountName) accountName.textContent = user.name || user.username || "Account";
+    if (accountEmail) accountEmail.textContent = user.email || "";
 
     const adminBadge = document.getElementById("adminBadge");
     const viewSwitcher = document.getElementById("viewSwitcher");
@@ -224,6 +230,21 @@ if (forgotPasswordButton) {
     });
 }
 
+if (accountButton && accountPopover) {
+    accountButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const opening = accountPopover.hidden;
+        accountPopover.hidden = !opening;
+        accountButton.setAttribute("aria-expanded", String(opening));
+        const notificationPopover = document.getElementById("notificationPopover");
+        const notificationsButton = document.getElementById("notificationsButton");
+        if (notificationPopover && !notificationPopover.hidden) {
+            notificationPopover.hidden = true;
+            notificationsButton?.setAttribute("aria-expanded", "false");
+        }
+    });
+}
+
 if (logoutButton) {
     logoutButton.addEventListener("click", async () => {
         const token = window.localStorage.getItem("parking_auth_token") || window.sessionStorage.getItem("parking_auth_token");
@@ -238,6 +259,18 @@ if (logoutButton) {
         window.location.reload();
     });
 }
+
+document.addEventListener("click", (event) => {
+    if (accountPopover?.contains(event.target) || accountButton?.contains(event.target)) return;
+    if (accountPopover) accountPopover.hidden = true;
+    accountButton?.setAttribute("aria-expanded", "false");
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (accountPopover) accountPopover.hidden = true;
+    accountButton?.setAttribute("aria-expanded", "false");
+});
 
 async function restoreSession() {
     const token = window.localStorage.getItem("parking_auth_token") || window.sessionStorage.getItem("parking_auth_token");

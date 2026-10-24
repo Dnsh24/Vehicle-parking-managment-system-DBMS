@@ -239,10 +239,17 @@ ReservationCreationResult Database::createReservation(
         slot_id,
         start_time,
         end_time);
+    const std::int64_t reservation_id = inserted[0]["reservation_id"].as<std::int64_t>();
+    transaction.exec_params(
+        "INSERT INTO notifications (user_id, title, message, type) "
+        "VALUES ($1, 'Reservation confirmed', "
+        "'Your reservation #' || $2::text || ' is confirmed.', 'reservation_confirmed')",
+        user_id,
+        reservation_id);
     transaction.commit();
     return {
         ReservationCreationStatus::created,
-        inserted[0]["reservation_id"].as<std::int64_t>()};
+        reservation_id};
 }
 
 ReservationCheckInResult Database::checkInReservation(
@@ -364,10 +371,56 @@ ReservationCheckInResult Database::checkInReservation(
         user_id,
         vehicle_id,
         slot_id);
+    transaction.exec_params(
+        "INSERT INTO notifications (user_id, title, message, type) "
+        "VALUES ($1, 'Parking check-in complete', "
+        "'Reservation #' || $2::text || ' has been checked in. Session #' || $3::text || ' is active.', "
+        "'check_in')",
+        user_id,
+        reservation_id,
+        session[0]["session_id"].as<std::int64_t>());
     transaction.commit();
     return {
         ReservationCheckInStatus::checked_in,
         session[0]["session_id"].as<std::int64_t>()};
+}
+
+ReservationCancellationStatus Database::cancelReservation(
+    std::int64_t user_id,
+    std::int64_t reservation_id) const
+{
+    pqxx::connection connection = createConnection();
+    pqxx::work transaction(connection);
+
+    const pqxx::result reservation = transaction.exec_params(
+        "UPDATE reservations SET status = 'cancelled' "
+        "WHERE reservation_id = $1 AND user_id = $2 "
+        "AND status IN ('pending', 'confirmed') "
+        "RETURNING reservation_id",
+        reservation_id,
+        user_id);
+    if (reservation.empty())
+    {
+        const pqxx::result owned = transaction.exec_params(
+            "SELECT reservation_id FROM reservations "
+            "WHERE reservation_id = $1 AND user_id = $2",
+            reservation_id,
+            user_id);
+        if (owned.empty())
+        {
+            return ReservationCancellationStatus::not_found;
+        }
+        return ReservationCancellationStatus::not_cancellable;
+    }
+
+    transaction.exec_params(
+        "INSERT INTO notifications (user_id, title, message, type) "
+        "VALUES ($1, 'Reservation cancelled', "
+        "'Reservation #' || $2::text || ' has been cancelled.', 'reservation_cancelled')",
+        user_id,
+        reservation_id);
+    transaction.commit();
+    return ReservationCancellationStatus::cancelled;
 }
 
 VehicleParkingResult Database::parkVehicle(
@@ -527,7 +580,7 @@ SessionExitResult Database::exitParkingSession(
 
     const std::string final_session_status = (overstay_duration_minutes > 0) ? "overstayed" : "completed";
 
-    std::string payment_status = (payment_action == "online_payment") ? "online_payment" : "payment_at_desk";
+    std::string payment_status = (payment_action == "online_payment") ? "online_payment" : "paid_manually";
     if (payment_action == "unpaid")
     {
         payment_status = "unpaid";
@@ -620,6 +673,33 @@ SessionExitResult Database::exitParkingSession(
             tx_ref,
             paid_at_val);
     }
+
+    transaction.exec_params(
+        "INSERT INTO notifications (user_id, title, message, type) "
+        "VALUES ($1, 'Parking session complete', "
+        "'Session #' || $2::text || ' ended. Final fee: INR ' || to_char($3::numeric, 'FM999999990.00') || '.', "
+        "'exit')",
+        user_id,
+        session_id,
+        total_fee);
+    if (overstay_duration_minutes > 0)
+    {
+        transaction.exec_params(
+            "INSERT INTO notifications (user_id, title, message, type) "
+            "VALUES ($1, 'Parking overstay recorded', "
+            "'Session #' || $2::text || ' exceeded the reserved end time by ' || $3::text || ' minutes.', "
+            "'overstay')",
+            user_id,
+            session_id,
+            overstay_duration_minutes);
+    }
+    transaction.exec_params(
+        "INSERT INTO notifications (user_id, title, message, type) "
+        "VALUES ($1, 'Fee status updated', "
+        "'Session #' || $2::text || ' fee status: ' || $3::text || '.', 'fee_status')",
+        user_id,
+        session_id,
+        payment_status);
 
     transaction.commit();
 

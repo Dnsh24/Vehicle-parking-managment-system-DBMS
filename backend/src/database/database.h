@@ -42,6 +42,13 @@ enum class ReservationCheckInStatus
     vehicle_unavailable
 };
 
+enum class ReservationCancellationStatus
+{
+    cancelled,
+    not_found,
+    not_cancellable
+};
+
 enum class SessionExitStatus
 {
     completed,
@@ -103,6 +110,9 @@ public:
         const std::string &start_time,
         const std::string &end_time) const;
     ReservationCheckInResult checkInReservation(
+        std::int64_t user_id,
+        std::int64_t reservation_id) const;
+    ReservationCancellationStatus cancelReservation(
         std::int64_t user_id,
         std::int64_t reservation_id) const;
     SessionExitResult exitParkingSession(

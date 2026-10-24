@@ -21,8 +21,34 @@
         <button class="view-switch-btn" id="viewAdminMode" type="button">Admin Console</button>
       </nav>
       <div class="topbar-status"><span class="pulse"></span> Live availability</div>
-      <button class="icon-button" type="button" aria-label="Notifications">♡</button>
-      <button class="avatar" id="logoutButton" type="button" aria-label="Log out">JD</button>
+      <div class="topbar-menu">
+        <button class="icon-button notification-nav-button" id="notificationsButton" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="notificationPopover">
+          <svg class="notification-bell-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+          </svg>
+          <span class="notification-unread-badge" id="notificationUnreadBadge" hidden>0</span>
+        </button>
+        <section class="topbar-popover notification-popover" id="notificationPopover" aria-label="Recent notifications" hidden>
+          <div class="popover-heading">
+            <strong>Notifications</strong>
+            <span class="muted" id="popoverUnreadLabel">0 unread</span>
+          </div>
+          <div class="popover-notification-list" id="popoverNotificationList" aria-live="polite">
+            <p class="muted">Loading notifications...</p>
+          </div>
+          <button class="popover-link" id="viewAllNotifications" type="button">View all notifications</button>
+        </section>
+      </div>
+      <div class="topbar-menu">
+        <button class="avatar" id="accountButton" type="button" aria-label="Account menu" aria-expanded="false" aria-controls="accountPopover">JD</button>
+        <section class="topbar-popover account-popover" id="accountPopover" aria-label="Account menu" hidden>
+          <div class="account-summary">
+            <strong id="accountName">Account</strong>
+            <span class="muted" id="accountEmail"></span>
+          </div>
+          <button class="account-logout-button" id="logoutButton" type="button">Log out</button>
+        </section>
+      </div>
     </header>
 
     <section class="auth-gate" id="authGate">
@@ -63,16 +89,26 @@
 
     <!-- User Protected Content -->
     <main class="page-shell" id="protectedContent" hidden>
-      <section class="page-heading">
-        <div>
-          <p class="eyebrow">Parking availability</p>
-          <h1>Find your parking spot</h1>
-          <p class="muted">View live availability across campus parking areas.</p>
-        </div>
-        <button class="refresh-button" id="refreshButton" type="button">
-          <span aria-hidden="true">↻</span> Refresh
+      <nav class="dashboard-page-nav" aria-label="Dashboard pages">
+        <button class="dashboard-page-button active" id="activityPageButton" type="button" aria-controls="activityPage" aria-current="page">
+          My parking
         </button>
-      </section>
+        <button class="dashboard-page-button" id="mapPageButton" type="button" aria-controls="mapPage">
+          Parking map
+        </button>
+      </nav>
+
+      <div id="activityPage" class="dashboard-page">
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">Your parking</p>
+            <h1>Manage your parking</h1>
+            <p class="muted">Manage vehicles, find a slot, and view your parking history.</p>
+          </div>
+          <button class="refresh-button" id="refreshButton" type="button">
+            <span aria-hidden="true">↻</span> Refresh
+          </button>
+        </section>
 
       <section class="vehicles-panel panel" aria-labelledby="vehiclesTitle">
         <div class="panel-heading">
@@ -182,6 +218,56 @@
         </div>
       </section>
 
+      <section class="history-notifications panel" id="historyNotificationsPanel" aria-labelledby="historyNotificationsTitle">
+        <div class="history-notifications-grid">
+          <div>
+            <div class="reservation-history-heading">
+              <div>
+                <p class="eyebrow">Your activity</p>
+                <h2 id="historyNotificationsTitle">Parking history</h2>
+              </div>
+            </div>
+            <div class="reservation-list" id="parkingHistoryList" aria-live="polite">
+              <p class="muted">Loading parking history...</p>
+            </div>
+            <div class="history-pagination">
+              <button class="vehicle-cancel" id="previousHistoryPage" type="button">Previous</button>
+              <span class="muted" id="historyPageLabel">Page 1</span>
+              <button class="vehicle-cancel" id="nextHistoryPage" type="button">Next</button>
+            </div>
+          </div>
+          <div>
+            <div class="reservation-history-heading">
+              <div>
+                <p class="eyebrow">Updates</p>
+                <h2>Notifications <span class="muted" id="notificationUnreadLabel">(0 unread)</span></h2>
+              </div>
+              <button class="vehicle-cancel" id="markAllNotificationsRead" type="button">Mark all read</button>
+            </div>
+            <div class="reservation-list" id="notificationList" aria-live="polite">
+              <p class="muted">Loading notifications...</p>
+            </div>
+            <div class="history-pagination">
+              <button class="vehicle-cancel" id="previousNotificationPage" type="button">Previous</button>
+              <span class="muted" id="notificationPageLabel">Page 1</span>
+              <button class="vehicle-cancel" id="nextNotificationPage" type="button">Next</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      </div>
+
+      <div id="mapPage" class="dashboard-page" hidden>
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">Parking availability</p>
+            <h1>Parking map</h1>
+            <p class="muted">Explore parking areas and check the current status of each slot.</p>
+          </div>
+          <button class="refresh-button" id="refreshMapButton" type="button">
+            <span aria-hidden="true">↻</span> Refresh map
+          </button>
+        </section>
       <section class="area-picker panel">
         <div class="area-picker-title">
           <span class="section-icon" aria-hidden="true">⌖</span>
@@ -251,6 +337,7 @@
           </dl>
           <p class="selection-note">Select any slot on the map to view its current information.</p>
         </aside>
+      </div>
       </div>
     </main>
 

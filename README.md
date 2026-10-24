@@ -7,11 +7,11 @@ frontend, a C++ backend using Crow, and a PostgreSQL database.
 
 | Component | Status |
 | --- | --- |
-| Frontend | Authentication, parking availability, vehicle parking/checkout, and reservation search/management UI implemented. |
-| PostgreSQL | Schema implemented with 14 core tables, constraints, and indexes. See [database.md](database.md). |
-| C++ backend | Crow server with PostgreSQL access, bearer authentication, parking availability, vehicle CRUD, direct parking assignments, and transactional reservations. |
-| REST API | Health, authentication, profile, parking availability, vehicle, reservation, and administrator endpoints are implemented. |
-| Frontend-backend integration | Browser `fetch` integration targets `http://localhost:3000`; Phase 5 reservation flow verified end to end. |
+| Frontend | Authentication, parking availability, vehicles, reservations, active sessions, history, notifications, and administrator management implemented. |
+| PostgreSQL | Schema implemented with 14 core tables, constraints, and indexes; Phase 8 notification indexes are in `database/phase8_history_notifications.sql`. See [database.md](database.md). |
+| C++ backend | Crow server with PostgreSQL access, bearer authentication, transactional reservations and sessions, manual exit billing, history, notifications, and administration. |
+| REST API | Health, authentication, profile, parking availability, vehicles, reservations, sessions, history, notifications, and administrator endpoints implemented. |
+| Frontend-backend integration | Browser `fetch` integration targets `http://localhost:3000`; live Phase 8 database end-to-end verification remains. |
 
 The database schema does not by itself mean that the corresponding user-facing
 features or CRUD operations are implemented.
@@ -42,10 +42,11 @@ HTML/CSS/JavaScript frontend
        PostgreSQL database
 ```
 
-Authentication, profiles, parking availability, vehicle management with
-manual slot assignment and checkout, basic administrator management &
-maintenance, and Phase 5 reservation flows are implemented. Payments, QR
-processing, and the remaining application APIs are planned rather than complete.
+Authentication, profiles, parking availability, vehicle management, basic
+administrator management and maintenance, reservations, manual check-in and
+exit, fee summaries, history, and in-app notifications are implemented.
+Automated expiry, QR processing, online payment processing, and advanced
+reporting remain planned.
 
 ## Implemented features
 
@@ -57,6 +58,8 @@ processing, and the remaining application APIs are planned rather than complete.
   selected vehicle until checkout.
 - Searches compatible slots by vehicle, area, location, slot type, EV charging,
   and requested time; creates, views, and cancels reservations.
+- Shows active parking sessions, parking history with fee/payment summaries,
+  paginated in-app notifications, unread count, and mark-as-read controls.
 - Administrator console with user role/status controls, area management, slot
   configuration, pricing rates, and maintenance scheduling.
 - Uses bearer-authenticated requests to the backend at port 3000.
@@ -71,6 +74,8 @@ processing, and the remaining application APIs are planned rather than complete.
 - Provides owner-scoped vehicle CRUD, compatible-slot selection, and checkout.
 - Provides owner-scoped availability search and transaction-protected reservation
   creation, listing, details, and cancellation.
+- Provides manual reservation check-in, session exit and fee calculation,
+  user-scoped paginated history, and transactional in-app event notifications.
 - Atomically claims/releases parking slots and persists assignment history.
 - Provides administrator operations for users, areas, slots, rates, and maintenance
   with role-based access control (`admin` role enforcement).
@@ -86,11 +91,10 @@ processing, and the remaining application APIs are planned rather than complete.
 The following are described in [planning.md](planning.md) but are not yet
 implemented as complete application functionality:
 
-- Reservation expiry
+- Automated reservation expiry
 - QR-based check-in and vehicle entry
-- Parking sessions, exit processing, and overstay calculation
-- Fee calculation, payments, and digital receipts
-- Notifications, history, administration, and reporting
+- Online payment processing, refunds, and digital receipts
+- Advanced fee rules, external notifications, and reporting
 
 ## Actual project structure
 
@@ -240,9 +244,7 @@ server port. The backend exits with a configuration error if
 
 ## Limitations and next steps
 
-The project currently demonstrates the initial frontend/backend/database
-connection and Phase 2 authentication/profile flows. The next implementation
-step is to replace the remaining test routes with validated application
-services and REST resources, then connect those services to the existing
-schema. Input validation, secrets management, and production deployment remain
-necessary before the system can be considered complete.
+The project has implemented the Version 1 core parking workflow through Phase 8.
+Live database end-to-end verification for Phase 8 and production deployment
+remain outstanding. Input validation, secrets management, and operational
+hardening remain necessary before the system can be considered complete.

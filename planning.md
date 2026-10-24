@@ -22,6 +22,9 @@
   selection, parking, checkout, map display, and live end-to-end verification
 - Phase 5 search and reservations: backend, frontend, unit tests, and
   user-verified end-to-end flow completed
+- Phase 8 history and in-app notifications: user-scoped paginated history and
+  notifications, read/unread controls, and transactional workflow event
+  notifications implemented; live database end-to-end verification remains
 - PostgreSQL schema with 14 core tables, constraints, and indexes
 
 ### In progress
@@ -221,8 +224,9 @@ amounts, and receipts.
 Notifications should support reservation confirmation, expiry, check-in,
 overstay, payment, session completion, and maintenance events.
 
-**Status:** Planned. The `notifications` table exists, but no services or
-frontend screens exist.
+**Status:** Implemented in Phase 8. User-scoped in-app notifications,
+reservation/session event notifications, unread tracking, and mark-as-read
+controls are available. External notification delivery remains planned.
 
 ## 4. Administrator requirements
 
@@ -405,12 +409,21 @@ References: `parking_sessions` and `parking_rates` in [database.md](database.md)
 
 #### Phase 8: Basic history and in-app notifications
 
+**Status:** Backend and frontend implemented; backend build and existing unit
+suite pass. Phase 8-specific and live database end-to-end verification remain.
+
 - Backend: user-scoped history, notifications, unread status, and event
   notifications for reservation confirmation, cancellation, check-in, exit,
   overstay, and fee status.
 - Frontend: history list, fee summaries, notification list, unread count, and
-  mark-as-read behavior.
-- Test user isolation, pagination, empty results, and notification ownership.
+  individual and bulk mark-as-read behavior.
+- History and notification endpoints enforce user scope and support bounded
+  pagination. Notification records are written in the same transactions as
+  reservation, check-in, cancellation, and exit state changes.
+- Apply `database/phase8_history_notifications.sql` to add notification-list
+  indexes.
+- Verify user isolation, pagination, empty results, notification ownership,
+  and event delivery against a running PostgreSQL/Crow application.
 
 References: `reservations`, `parking_sessions`, and `notifications` in
 [database.md](database.md).

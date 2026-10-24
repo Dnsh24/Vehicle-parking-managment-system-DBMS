@@ -22,6 +22,7 @@
 body { margin: 0; color: var(--ink); background: var(--background); }
 header[hidden] { display: none; }
 #authGate[hidden], #protectedContent[hidden] { display: none !important; }
+#activityPage[hidden], #mapPage[hidden] { display: none !important; }
 button { font: inherit; cursor: pointer; }
 .topbar { height: 76px; padding: 0 5.5%; display: flex; align-items: center; gap: 22px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 11px; margin-right: auto; color: var(--ink); text-decoration: none; }
@@ -30,6 +31,11 @@ button { font: inherit; cursor: pointer; }
 .topbar-status { color: var(--muted); font-size: 12px; }.pulse { display: inline-block; width: 7px; height: 7px; margin-right: 6px; background: var(--green); border-radius: 50%; }
 .icon-button, .avatar { border: 0; background: transparent; color: var(--muted); }.icon-button { font-size: 22px; }.avatar { display: grid; place-items: center; width: 34px; height: 34px; color: #4d3f9a; background: #eeeafd; border-radius: 50%; font-size: 12px; font-weight: 700; }
 .page-shell { max-width: 1400px; margin: 0 auto; padding: 34px 28px 64px; }.page-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 22px; }
+.dashboard-page-nav { display: flex; gap: 8px; margin: 0 0 24px; padding: 5px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.dashboard-page-button { min-height: 40px; padding: 9px 18px; color: var(--muted); background: transparent; border: 0; border-radius: 7px; font-size: 13px; font-weight: 700; transition: color .15s, background .15s, box-shadow .15s; }
+.dashboard-page-button:hover { color: var(--ink); background: #f6f8f9; }
+.dashboard-page-button.active { color: white; background: var(--green); box-shadow: 0 2px 7px rgba(34, 160, 107, .2); }
+.dashboard-page-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 h1, h2, p { margin: 0; } h1 { margin-top: 6px; font-size: clamp(27px, 4vw, 35px); letter-spacing: -1px; }.page-heading .muted { margin-top: 8px; }
 .eyebrow, .label { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }.muted { color: var(--muted); font-size: 13px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 7px 22px rgba(30, 56, 75, .035); }
@@ -354,4 +360,43 @@ dialog.exit-modal::backdrop {
 .exit-modal-actions button.vehicle-cancel:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
+}
+
+.notification-nav-button { position: relative; display: inline-flex; align-items: center; gap: 3px; }
+.notification-bell-icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.notification-unread-badge { display: grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; color: white; background: var(--red); border-radius: 10px; font-size: 9px; font-weight: 800; }
+.notification-unread-badge[hidden] { display: none; }
+.topbar-menu { position: relative; display: flex; align-items: center; }
+.topbar-popover[hidden] { display: none; }
+.topbar-popover { position: absolute; top: calc(100% + 14px); right: 0; z-index: 20; width: min(360px, calc(100vw - 28px)); padding: 15px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 36px rgba(30, 56, 75, .18); }
+.notification-popover { width: min(390px, calc(100vw - 28px)); }
+.popover-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.popover-notification-list { display: grid; gap: 8px; max-height: min(55vh, 420px); margin: 10px 0; overflow-y: auto; }
+.popover-notification { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px; background: #f8fafb; border: 1px solid var(--line); border-radius: 8px; }
+.popover-notification.is-unread { background: #f1f8ff; border-color: #c9e4f4; }
+.popover-notification strong { font-size: 12px; }
+.popover-notification p { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.popover-notification .notification-created { margin-top: 6px; font-size: 10px; }
+.popover-notification .vehicle-cancel { flex: 0 0 auto; padding: 6px 8px; font-size: 10px; }
+.popover-link { width: 100%; padding: 10px 4px 2px; color: var(--blue); background: transparent; border: 0; border-top: 1px solid var(--line); font-size: 12px; font-weight: 700; text-align: center; }
+.account-popover { width: min(250px, calc(100vw - 28px)); padding: 0; overflow: hidden; }
+.account-summary { display: grid; gap: 4px; padding: 15px; overflow-wrap: anywhere; }
+.account-summary strong { font-size: 13px; }
+.account-summary .muted { font-size: 11px; }
+.account-logout-button { width: 100%; padding: 12px 15px; color: var(--red); background: white; border: 0; border-top: 1px solid var(--line); font-size: 12px; font-weight: 700; text-align: left; }
+.account-logout-button:hover { background: var(--red-soft); }
+.history-notifications { padding: 22px; margin: 20px 0; scroll-margin-top: 20px; }
+.history-notifications-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.history-notifications h2 { margin-top: 4px; font-size: 20px; }
+.history-notifications .reservation-history-heading { min-height: 48px; margin-bottom: 12px; }
+.history-card, .notification-card { align-items: flex-start; }
+.history-fee-summary { margin-top: 8px; color: var(--ink) !important; font-weight: 700; }
+.notification-card.is-unread { background: #f5fbff; border-color: #c9e4f4; }
+.notification-card.is-read { opacity: .78; }
+.notification-created { display: block; margin-top: 7px; }
+.history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.history-pagination button:disabled { cursor: not-allowed; opacity: .5; }
+
+@media (max-width: 760px) {
+    .history-notifications-grid { grid-template-columns: 1fr; }
 }

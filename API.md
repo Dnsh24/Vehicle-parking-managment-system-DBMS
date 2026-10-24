@@ -4,14 +4,15 @@
 
 The API includes authentication, profiles, owner-scoped vehicle management,
 parking availability, reservations, manual reservation check-in, active
-parking sessions, manual exit, overstay billing, and fee summaries.
+parking sessions, manual exit, overstay billing, fee summaries, user-scoped
+parking history, and in-app notifications.
 
 | Component | Current status |
 | --- | --- |
 | Crow backend | Implemented with multi-threaded routing |
-| REST endpoints | Health, parking availability, vehicles, reservations, parking sessions, and administrator endpoints implemented |
+| REST endpoints | Health, parking availability, vehicles, reservations, parking sessions, history, notifications, and administrator endpoints implemented |
 | PostgreSQL through C++ | libpqxx parameterized queries and transactions |
-| Frontend API integration | Authentication, parking availability, vehicle and reservation management, active sessions, and admin console |
+| Frontend API integration | Authentication, parking availability, vehicle and reservation management, active sessions, history, notifications, and admin console |
 | Authentication and authorization | Bearer sessions with role-based access (`user`, `admin`) |
 | Vehicle management | Authenticated CRUD and parking assignments implemented |
 | Reservations and sessions | Availability filters, transactional booking/check-in, owner-scoped listing/details, cancellation, and active-session listing |
@@ -219,6 +220,39 @@ unavailable returns `409` with a specific error code.
 Returns the authenticated user's active parking sessions with vehicle, slot,
 area, entry time, and reserved end time. Unauthenticated requests return `401
 UNAUTHENTICATED`.
+
+### `GET /api/history`
+
+Returns the authenticated user's completed, cancelled, and expired reservations,
+including any linked parking session and fee/payment summary. Results are
+ordered newest first and paginated with optional `limit` (default `20`, maximum
+`100`) and `offset` (default `0`) query parameters.
+
+Each history item includes reservation, vehicle, slot, area, and time details.
+When a parking session exists, `fee_summary` includes its status, entry/exit
+times, duration, overstay duration, total fee, and payment status. The response
+includes `total`, `limit`, and `offset`. Invalid pagination returns `400
+INVALID_PAGINATION`; results are always restricted to the authenticated user.
+
+### `GET /api/notifications`
+
+Returns the authenticated user's notifications ordered newest first. Supports
+the same `limit` and `offset` pagination parameters as `/api/history`; response
+includes `notifications`, `total`, and `unread_count`.
+
+Notifications are created for reservation confirmation/cancellation, check-in,
+session exit, overstay, and fee-status changes.
+
+### `POST /api/notifications/{notification_id}/read`
+
+Marks an owned notification as read. Repeating the request is safe. Returns
+`404 NOTIFICATION_NOT_FOUND` for a missing notification or one owned by another
+user.
+
+### `POST /api/notifications/read-all`
+
+Marks all of the authenticated user's notifications as read and returns
+`updated_count` and an `unread_count` of zero.
 
 ### `GET /api/parking-sessions/{session_id}/fee-summary`
 
@@ -506,9 +540,10 @@ token.
 
 The following areas are planned, not implemented:
 
-- Parking-area, slot, and rate management writes
 - QR-token check-in
-- Payments, receipts, and notifications
+- Automated reservation expiry
+- Online payment gateways, refunds, and receipts
+- Advanced fee rules, external notifications, and reporting
 
 Request and response contracts should be added here only when their routes are
 implemented and tested.

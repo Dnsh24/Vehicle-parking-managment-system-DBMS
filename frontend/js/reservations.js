@@ -10,6 +10,20 @@ const reservationList = document.getElementById("reservationList");
 const reservationMessage = document.getElementById("reservationMessage");
 const refreshReservationsButton = document.getElementById("refreshReservationsButton");
 const activeParkingSessions = document.getElementById("activeParkingSessions");
+const parkingHistoryList = document.getElementById("parkingHistoryList");
+const notificationList = document.getElementById("notificationList");
+const popoverNotificationList = document.getElementById("popoverNotificationList");
+const notificationUnreadBadge = document.getElementById("notificationUnreadBadge");
+const notificationUnreadLabel = document.getElementById("notificationUnreadLabel");
+const popoverUnreadLabel = document.getElementById("popoverUnreadLabel");
+const notificationPopover = document.getElementById("notificationPopover");
+const notificationsButton = document.getElementById("notificationsButton");
+const historyPageLabel = document.getElementById("historyPageLabel");
+const notificationPageLabel = document.getElementById("notificationPageLabel");
+const historyPageSize = 10;
+const notificationPageSize = 10;
+let historyPageOffset = 0;
+let notificationPageOffset = 0;
 
 function setReservationMessage(message, isError = false) {
     if (!reservationMessage) return;
@@ -248,6 +262,161 @@ function renderActiveParkingSessions(sessions) {
     });
 }
 
+function renderParkingHistory(items) {
+    if (!parkingHistoryList) return;
+    parkingHistoryList.replaceChildren();
+    if (items.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = "Completed, cancelled, or expired parking activity will appear here.";
+        parkingHistoryList.append(empty);
+        return;
+    }
+
+    items.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "reservation-card history-card";
+        const details = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = `${item.area_name} · ${item.slot_number}`;
+        const description = document.createElement("p");
+        description.textContent = `${item.registration_number} · ${formatIsoTimestamp(item.start_time)} – ${formatIsoTimestamp(item.end_time)}`;
+        const status = document.createElement("span");
+        status.className = "reservation-status";
+        status.textContent = item.reservation_status[0].toUpperCase() + item.reservation_status.slice(1);
+        details.append(title, description, status);
+
+        if (item.fee_summary) {
+            const fee = document.createElement("p");
+            const summary = item.fee_summary;
+            fee.className = "history-fee-summary";
+            fee.textContent = `Session ${summary.status} · ${summary.duration_minutes} min · ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(summary.total_fee)} · ${summary.payment_status.replace(/_/g, " ")}`;
+            details.append(fee);
+        }
+        card.append(details);
+        parkingHistoryList.append(card);
+    });
+}
+
+async function loadParkingHistory() {
+    if (!parkingHistoryList) return;
+    try {
+        const response = await fetch(
+            `${API_BASE}/api/history?limit=${historyPageSize}&offset=${historyPageOffset}`,
+            { headers: authHeaders() }
+        );
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data.history)) {
+            throw new Error(data.error?.message || "Parking history could not be loaded.");
+        }
+        renderParkingHistory(data.history);
+        const total = Number(data.total) || 0;
+        if (total === 0) {
+            historyPageOffset = 0;
+        } else if (historyPageOffset >= total) {
+            historyPageOffset = Math.floor((total - 1) / historyPageSize) * historyPageSize;
+        }
+        if (historyPageOffset !== data.offset) {
+            await loadParkingHistory();
+            return;
+        }
+        if (historyPageLabel) {
+            historyPageLabel.textContent = `Page ${Math.floor(historyPageOffset / historyPageSize) + 1}`;
+        }
+        const previous = document.getElementById("previousHistoryPage");
+        const next = document.getElementById("nextHistoryPage");
+        if (previous) previous.disabled = historyPageOffset === 0;
+        if (next) next.disabled = historyPageOffset + historyPageSize >= total;
+    } catch (error) {
+        parkingHistoryList.replaceChildren();
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = error.message;
+        parkingHistoryList.append(message);
+    }
+}
+
+function renderNotifications(items) {
+    const renderList = (list, compact = false) => {
+        if (!list) return;
+        list.replaceChildren();
+        if (items.length === 0) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "You have no notifications.";
+            list.append(empty);
+            return;
+        }
+
+        (compact ? items.slice(0, 5) : items).forEach((item) => {
+            const card = document.createElement("article");
+            card.className = `${compact ? "popover-notification" : "reservation-card notification-card"}${item.is_read ? " is-read" : " is-unread"}`;
+            const details = document.createElement("div");
+            const title = document.createElement("strong");
+            title.textContent = item.title;
+            const message = document.createElement("p");
+            message.textContent = item.message;
+            const created = document.createElement("span");
+            created.className = "muted notification-created";
+            created.textContent = formatIsoTimestamp(item.created_at);
+            details.append(title, message, created);
+            card.append(details);
+            if (!item.is_read) {
+                const readButton = document.createElement("button");
+                readButton.type = "button";
+                readButton.className = "vehicle-cancel";
+                readButton.dataset.notificationId = item.notification_id;
+                readButton.textContent = compact ? "Read" : "Mark read";
+                card.append(readButton);
+            }
+            list.append(card);
+        });
+    };
+    renderList(notificationList);
+    renderList(popoverNotificationList, true);
+}
+
+async function loadNotifications() {
+    if (!notificationList && !popoverNotificationList) return;
+    try {
+        const response = await fetch(
+            `${API_BASE}/api/notifications?limit=${notificationPageSize}&offset=${notificationPageOffset}`,
+            { headers: authHeaders() }
+        );
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data.notifications)) {
+            throw new Error(data.error?.message || "Notifications could not be loaded.");
+        }
+        renderNotifications(data.notifications);
+        const unreadCount = Number(data.unread_count) || 0;
+        if (notificationUnreadBadge) {
+            notificationUnreadBadge.textContent = String(unreadCount);
+            notificationUnreadBadge.hidden = unreadCount === 0;
+        }
+        if (notificationUnreadLabel) {
+            notificationUnreadLabel.textContent = `(${unreadCount} unread)`;
+        }
+        if (popoverUnreadLabel) {
+            popoverUnreadLabel.textContent = `${unreadCount} unread`;
+        }
+        if (notificationPageLabel) {
+            notificationPageLabel.textContent = `Page ${Math.floor(notificationPageOffset / notificationPageSize) + 1}`;
+        }
+        const previous = document.getElementById("previousNotificationPage");
+        const next = document.getElementById("nextNotificationPage");
+        if (previous) previous.disabled = notificationPageOffset === 0;
+        if (next) next.disabled = notificationPageOffset + notificationPageSize >= Number(data.total);
+    } catch (error) {
+        const message = document.createElement("p");
+        message.className = "muted";
+        message.textContent = error.message;
+        [notificationList, popoverNotificationList].forEach((list) => {
+            if (!list) return;
+            list.replaceChildren(message.cloneNode(true));
+        });
+    }
+}
+
 async function loadReservations() {
     if (!reservationList) return;
     reservationList.replaceChildren();
@@ -290,7 +459,13 @@ async function loadActiveParkingSessions() {
 
 async function loadReservationPage() {
     setReservationDateDefaults();
-    await Promise.all([loadReservationOptions(), loadReservations(), loadActiveParkingSessions()]);
+    await Promise.all([
+        loadReservationOptions(),
+        loadReservations(),
+        loadActiveParkingSessions(),
+        loadParkingHistory(),
+        loadNotifications()
+    ]);
 }
 
 if (reservationSearchForm) {
@@ -365,7 +540,7 @@ if (reservationResults) {
                 throw new Error(data.error?.message || "The reservation could not be created.");
             }
             setReservationMessage(`Reservation #${data.reservation.reservation_id} confirmed for ${data.reservation.slot_number}.`);
-            await loadReservations();
+            await Promise.all([loadReservations(), loadNotifications()]);
             reservationSearchForm.requestSubmit();
         } catch (error) {
             setReservationMessage(error.message, true);
@@ -392,7 +567,7 @@ if (reservationList) {
                 setReservationMessage(
                     `Checked in successfully. ${data.session.registration_number} is parked at ${data.session.area_name}, ${data.session.slot_number}.`
                 );
-                await Promise.all([loadReservations(), loadActiveParkingSessions()]);
+                await Promise.all([loadReservations(), loadActiveParkingSessions(), loadNotifications()]);
                 return;
             }
             if (button.dataset.action === "details") {
@@ -421,7 +596,7 @@ if (reservationList) {
                 throw new Error(data.error?.message || "The reservation could not be cancelled.");
             }
             setReservationMessage(`Reservation #${reservationId} cancelled.`);
-            await loadReservations();
+            await Promise.all([loadReservations(), loadParkingHistory(), loadNotifications()]);
             reservationSearchForm.requestSubmit();
         } catch (error) {
             if (button.dataset.action === "check-in") {
@@ -434,9 +609,112 @@ if (reservationList) {
 
 if (refreshReservationsButton) {
     refreshReservationsButton.addEventListener("click", () => {
-        Promise.all([loadReservations(), loadActiveParkingSessions()]);
+        Promise.all([
+            loadReservations(),
+            loadActiveParkingSessions(),
+            loadParkingHistory(),
+            loadNotifications()
+        ]);
     });
 }
+
+if (notificationsButton) {
+    notificationsButton.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        const opening = notificationPopover.hidden;
+        notificationPopover.hidden = !opening;
+        notificationsButton.setAttribute("aria-expanded", String(opening));
+        const accountPopover = document.getElementById("accountPopover");
+        const accountButton = document.getElementById("accountButton");
+        if (accountPopover && !accountPopover.hidden) {
+            accountPopover.hidden = true;
+            accountButton?.setAttribute("aria-expanded", "false");
+        }
+        if (opening) {
+            notificationPageOffset = 0;
+            await loadNotifications();
+        }
+    });
+}
+
+document.getElementById("viewAllNotifications")?.addEventListener("click", () => {
+    if (notificationPopover) notificationPopover.hidden = true;
+    notificationsButton?.setAttribute("aria-expanded", "false");
+    document.getElementById("historyNotificationsPanel")?.scrollIntoView({ behavior: "smooth" });
+});
+
+document.addEventListener("click", (event) => {
+    if (notificationPopover?.contains(event.target) || notificationsButton?.contains(event.target)) return;
+    if (notificationPopover) notificationPopover.hidden = true;
+    notificationsButton?.setAttribute("aria-expanded", "false");
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (notificationPopover) notificationPopover.hidden = true;
+    notificationsButton?.setAttribute("aria-expanded", "false");
+});
+
+document.getElementById("previousHistoryPage")?.addEventListener("click", () => {
+    historyPageOffset = Math.max(0, historyPageOffset - historyPageSize);
+    loadParkingHistory();
+});
+document.getElementById("nextHistoryPage")?.addEventListener("click", () => {
+    historyPageOffset += historyPageSize;
+    loadParkingHistory();
+});
+document.getElementById("previousNotificationPage")?.addEventListener("click", () => {
+    notificationPageOffset = Math.max(0, notificationPageOffset - notificationPageSize);
+    loadNotifications();
+});
+document.getElementById("nextNotificationPage")?.addEventListener("click", () => {
+    notificationPageOffset += notificationPageSize;
+    loadNotifications();
+});
+
+if (notificationList || popoverNotificationList) {
+    const handleNotificationRead = async (event) => {
+        const button = event.target.closest("button[data-notification-id]");
+        if (!button) return;
+        button.disabled = true;
+        try {
+            const response = await fetch(
+                `${API_BASE}/api/notifications/${encodeURIComponent(button.dataset.notificationId)}/read`,
+                { method: "POST", headers: authHeaders() }
+            );
+            const data = await response.json();
+            if (!response.ok || data.is_read !== true) {
+                throw new Error(data.error?.message || "The notification could not be marked as read.");
+            }
+            await loadNotifications();
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = error.message;
+        }
+    };
+    notificationList?.addEventListener("click", handleNotificationRead);
+    popoverNotificationList?.addEventListener("click", handleNotificationRead);
+}
+
+document.getElementById("markAllNotificationsRead")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+        const response = await fetch(`${API_BASE}/api/notifications/read-all`, {
+            method: "POST",
+            headers: authHeaders()
+        });
+        const data = await response.json();
+        if (!response.ok || data.unread_count !== 0) {
+            throw new Error(data.error?.message || "Notifications could not be marked as read.");
+        }
+        await loadNotifications();
+    } catch (error) {
+        setReservationMessage(error.message, true);
+    } finally {
+        button.disabled = false;
+    }
+});
 const sessionExitDialog = document.getElementById("sessionExitDialog");
 const exitModalTitle = document.getElementById("exitModalTitle");
 const exitModalBody = document.getElementById("exitModalBody");
@@ -577,7 +855,9 @@ async function showSessionExitModal(sessionId, isCheckoutMode) {
                     );
                     await Promise.all([
                         loadReservations(),
-                        loadActiveParkingSessions()
+                        loadActiveParkingSessions(),
+                        loadParkingHistory(),
+                        loadNotifications()
                     ]);
                     if (typeof loadAreas === "function") {
                         await loadAreas();
