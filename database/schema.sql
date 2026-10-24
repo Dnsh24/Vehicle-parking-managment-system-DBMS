@@ -447,4 +447,135 @@ CREATE INDEX idx_notifications_user_id
 CREATE INDEX idx_notifications_unread
     ON notifications(user_id, is_read);
 
+
+-- ============================================================
+-- VIEWS
+-- ============================================================
+
+CREATE OR REPLACE VIEW v_parking_area_revenue_report AS
+SELECT 
+    pa.area_id,
+    pa.name AS area_name,
+    pa.location,
+    pa.capacity,
+    COUNT(DISTINCT ps.slot_id) AS total_slots,
+    COUNT(DISTINCT s.session_id) AS total_sessions,
+    COALESCE(SUM(p.amount), 0.00) AS total_revenue,
+    COALESCE(ROUND(AVG(s.duration_minutes), 2), 0.00) AS avg_duration_minutes,
+    COALESCE(ROUND(AVG(p.amount), 2), 0.00) AS avg_revenue_per_session
+FROM parking_areas pa
+LEFT JOIN parking_slots ps ON ps.area_id = pa.area_id
+LEFT JOIN parking_sessions s ON s.slot_id = ps.slot_id AND s.status IN ('completed', 'overstayed')
+LEFT JOIN payments p ON p.session_id = s.session_id AND p.status = 'successful'
+GROUP BY pa.area_id, pa.name, pa.location, pa.capacity;
+
+CREATE OR REPLACE VIEW v_active_parking_status AS
+SELECT
+    ps.slot_id,
+    pa.name AS area_name,
+    ps.slot_number,
+    ps.vehicle_type,
+    ps.slot_type,
+    ps.is_ev,
+    ps.status AS slot_status,
+    u.name AS parked_user_name,
+    v.registration_number,
+    s.entry_time,
+    s.status AS session_status
+FROM parking_slots ps
+JOIN parking_areas pa ON pa.area_id = ps.area_id
+LEFT JOIN parking_sessions s ON s.slot_id = ps.slot_id AND s.exit_time IS NULL AND s.status IN ('active', 'overstayed')
+LEFT JOIN vehicles v ON v.vehicle_id = s.vehicle_id
+LEFT JOIN users u ON u.user_id = s.user_id;
+
+-- ============================================================
+-- FUNCTIONS AND STORED PROCEDURES
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION fn_get_available_slots_count(p_area_id BIGINT)
+RETURNS INTEGER AS $$
+DECLARE
+    v_available_count INTEGER;
+BEGIN
+    SELECT COUNT(*)
+    INTO v_available_count
+    FROM parking_slots
+    WHERE area_id = p_area_id
+      AND status = 'available';
+    RETURN v_available_count;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_calculate_estimated_fee(
+    p_area_id BIGINT,
+    p_vehicle_type VARCHAR,
+    p_slot_type VARCHAR,
+    p_hours NUMERIC
+)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_rate NUMERIC(10,2);
+    v_total NUMERIC(10,2);
+BEGIN
+    SELECT hourly_rate
+    INTO v_rate
+    FROM parking_rates
+    WHERE area_id = p_area_id
+      AND vehicle_type = p_vehicle_type
+      AND slot_type = p_slot_type;
+
+    IF v_rate IS NULL THEN
+        v_rate := 30.00;
+    END IF;
+
+    v_total := CEIL(p_hours) * v_rate;
+    RETURN v_total;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE PROCEDURE sp_record_maintenance(
+    p_slot_id BIGINT,
+    p_reason TEXT,
+    p_start_time TIMESTAMPTZ,
+    p_end_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO maintenance (slot_id, reason, start_time, end_time, status)
+    VALUES (p_slot_id, p_reason, p_start_time, p_end_time, 'scheduled');
+    
+    UPDATE parking_slots
+    SET status = 'maintenance'
+    WHERE slot_id = p_slot_id;
+END;
+$$;
+
+-- ============================================================
+-- TRIGGERS
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION trg_fn_sync_slot_maintenance()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status IN ('scheduled', 'in_progress') THEN
+        UPDATE parking_slots
+        SET status = 'maintenance'
+        WHERE slot_id = NEW.slot_id;
+    ELSIF NEW.status IN ('completed', 'cancelled') THEN
+        UPDATE parking_slots
+        SET status = 'available'
+        WHERE slot_id = NEW.slot_id
+          AND status = 'maintenance';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_maintenance_slot_status ON maintenance;
+CREATE TRIGGER trg_maintenance_slot_status
+AFTER INSERT OR UPDATE OF status ON maintenance
+FOR EACH ROW
+EXECUTE FUNCTION trg_fn_sync_slot_maintenance();
+
 COMMIT;

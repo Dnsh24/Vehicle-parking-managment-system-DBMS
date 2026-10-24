@@ -12,6 +12,172 @@ All identity columns use `BIGINT GENERATED ALWAYS AS IDENTITY`. Unless stated
 otherwise, every table has a `created_at TIMESTAMPTZ NOT NULL DEFAULT
 CURRENT_TIMESTAMP` column.
 
+
+## Entity-Relationship (ER) Diagram
+
+The following diagram illustrates the entities, attributes, primary/foreign keys, and cardinalities of the database:
+
+```mermaid
+erDiagram
+    USERS ||--o{ AUTH_SESSIONS : "has"
+    USERS ||--o{ VEHICLES : "owns"
+    USERS ||--o{ PARKING_ASSIGNMENTS : "parks"
+    USERS ||--o{ RESERVATIONS : "books"
+    USERS ||--o{ PARKING_SESSIONS : "conducts"
+    USERS ||--o{ PAYMENTS : "pays"
+    USERS ||--o{ NOTIFICATIONS : "receives"
+
+    PARKING_AREAS ||--o{ PARKING_SLOTS : "contains"
+    PARKING_AREAS ||--o{ PARKING_RATES : "defines"
+
+    PARKING_SLOTS ||--o{ PARKING_ASSIGNMENTS : "assigned_to"
+    PARKING_SLOTS ||--o{ RESERVATIONS : "reserved_for"
+    PARKING_SLOTS ||--o{ PARKING_SESSIONS : "occupied_by"
+    PARKING_SLOTS ||--o{ MAINTENANCE : "undergoes"
+
+    VEHICLES ||--o{ PARKING_ASSIGNMENTS : "parked_in"
+    VEHICLES ||--o{ RESERVATIONS : "booked_for"
+    VEHICLES ||--o{ PARKING_SESSIONS : "used_in"
+
+    RESERVATIONS ||--o| PARKING_SESSIONS : "originates"
+    RESERVATIONS ||--o{ PAYMENTS : "settles"
+
+    PARKING_SESSIONS ||--o| PAYMENTS : "billed_under"
+
+    USERS {
+        bigint user_id PK
+        varchar username UK
+        varchar name
+        varchar email UK
+        text password_hash
+        varchar phone
+        varchar role
+        boolean is_active
+        timestamptz created_at
+    }
+
+    AUTH_SESSIONS {
+        bigint session_id PK
+        bigint user_id FK
+        char token_hash UK
+        timestamptz expires_at
+        timestamptz created_at
+    }
+
+    VEHICLES {
+        bigint vehicle_id PK
+        bigint user_id FK
+        varchar registration_number UK
+        varchar vehicle_type
+        boolean is_electric
+        boolean needs_accessible_parking
+        timestamptz created_at
+    }
+
+    PARKING_AREAS {
+        bigint area_id PK
+        varchar name
+        text location
+        numeric latitude
+        numeric longitude
+        text operating_hours
+        integer capacity
+        varchar status
+        timestamptz created_at
+    }
+
+    PARKING_SLOTS {
+        bigint slot_id PK
+        bigint area_id FK
+        varchar slot_number
+        varchar vehicle_type
+        varchar slot_type
+        boolean is_ev
+        varchar status
+        timestamptz created_at
+    }
+
+    PARKING_ASSIGNMENTS {
+        bigint assignment_id PK
+        bigint user_id FK
+        bigint vehicle_id FK
+        bigint slot_id FK
+        timestamptz parked_at
+        timestamptz checkout_at
+        timestamptz created_at
+    }
+
+    PARKING_RATES {
+        bigint rate_id PK
+        bigint area_id FK
+        varchar vehicle_type
+        varchar slot_type
+        numeric hourly_rate
+        numeric overstay_rate
+        numeric ev_charging_rate
+        timestamptz created_at
+    }
+
+    RESERVATIONS {
+        bigint reservation_id PK
+        bigint user_id FK
+        bigint vehicle_id FK
+        bigint slot_id FK
+        timestamptz start_time
+        timestamptz end_time
+        varchar status
+        timestamptz created_at
+    }
+
+    PARKING_SESSIONS {
+        bigint session_id PK
+        bigint reservation_id FK
+        bigint user_id FK
+        bigint vehicle_id FK
+        bigint slot_id FK
+        timestamptz entry_time
+        timestamptz exit_time
+        integer duration_minutes
+        varchar status
+        integer overstay_duration_minutes
+        numeric calculated_fee
+        timestamptz created_at
+    }
+
+    MAINTENANCE {
+        bigint maintenance_id PK
+        bigint slot_id FK
+        text reason
+        timestamptz start_time
+        timestamptz end_time
+        varchar status
+        timestamptz created_at
+    }
+
+    PAYMENTS {
+        bigint payment_id PK
+        bigint reservation_id FK
+        bigint session_id FK
+        bigint user_id FK
+        numeric amount
+        varchar payment_method
+        varchar status
+        varchar transaction_reference UK
+        timestamptz paid_at
+        timestamptz created_at
+    }
+
+    NOTIFICATIONS {
+        bigint notification_id PK
+        bigint user_id FK
+        varchar title
+        text message
+        varchar type
+        boolean is_read
+        timestamptz created_at
+    }
+```
+
 ## Tables
 
 ### `users`
@@ -295,6 +461,52 @@ would require reviewing business dependencies and future application rules.
 
 ## Database versus application implementation
 
-These 14 tables document the database design. They do not by themselves prove
+These 12 tables document the database design. They do not by themselves prove
 that the corresponding C++ backend, REST resources, authentication, payment
 processing, or user-facing parking workflows have been implemented.
+
+
+## Relational Schema & 3NF Normalization Justification
+
+The relational database schema is normalized up to the **Third Normal Form (3NF)** to eliminate data redundancy, enforce data integrity, and prevent update, insertion, and deletion anomalies.
+
+### 1. First Normal Form (1NF) Compliance
+A relation is in 1NF if every attribute contains only atomic (indivisible) values and each row is uniquely identifiable.
+- **Atomicity**: All columns store single, scalar values (e.g., `VARCHAR`, `BIGINT`, `BOOLEAN`, `NUMERIC`). There are no repeating groups, comma-separated lists, or multi-valued arrays.
+- **Unique Row Identification**: Every table has an explicit synthetic primary key defined using `BIGINT GENERATED ALWAYS AS IDENTITY`.
+
+### 2. Second Normal Form (2NF) Compliance
+A relation is in 2NF if it is in 1NF and all non-key attributes are fully functionally dependent on the primary key (no partial functional dependencies on composite keys).
+- **Single-Attribute Primary Keys**: All tables use a single surrogate primary key (`user_id`, `vehicle_id`, `area_id`, `slot_id`, etc.). Therefore, partial key dependencies are mathematically impossible.
+- **Composite Unique Keys**: Where composite natural unique keys exist (e.g., `(area_id, slot_number)` in `parking_slots` or `(area_id, vehicle_type, slot_type)` in `parking_rates`), the non-key attributes (such as `hourly_rate`, `status`) describe the complete combination, not a sub-part.
+
+### 3. Third Normal Form (3NF) Compliance
+A relation is in 3NF if it is in 2NF and no non-key attribute is transitively dependent on the primary key (i.e., non-key attributes depend *only* on the primary key: $X \rightarrow Y$ where $Y$ is a prime attribute or $X$ is a superkey).
+- **Users**: Attributes (`name`, `email`, `phone`, `role`) depend directly on `user_id`. No non-key attribute determines another non-key attribute.
+- **Vehicles**: Attributes (`registration_number`, `vehicle_type`, `is_electric`, `needs_accessible_parking`) depend directly on `vehicle_id`. The owner is referenced via foreign key `user_id`, preventing the duplication of user profile data inside the vehicle entity.
+- **Parking Slots & Areas**: Area attributes (`location`, `capacity`, `operating_hours`) are factored out into `parking_areas`. The `parking_slots` table stores only `area_id` and slot-specific attributes (`slot_number`, `slot_type`, `status`), avoiding the transitive dependency: $\text{slot\_id} \rightarrow \text{area\_id} \rightarrow \text{location}$.
+- **Rates**: Rate rules are isolated in `parking_rates` by `(area_id, vehicle_type, slot_type)`. This prevents redundant fee definitions inside `parking_slots` or `parking_sessions`.
+- **Sessions & Payments**: Parking sessions store duration and fees calculated for a specific reservation. Payments capture settlement transaction details (`amount`, `payment_method`, `transaction_reference`) referencing `session_id` and `user_id`, maintaining transactional isolation.
+
+---
+
+## Database Views, Functions, Procedures, and Triggers
+
+### 1. Views
+- **`v_parking_area_revenue_report`**:
+  Aggregates multi-table analytical reporting across `parking_areas`, `parking_slots`, `parking_sessions`, and `payments`. Computes total slots, session counts, total revenue, average session duration, and average revenue per session using `JOIN`, `COUNT(DISTINCT ...)`, `SUM`, `AVG`, and `GROUP BY`.
+- **`v_active_parking_status`**:
+  Real-time operational view joining slots, areas, active sessions, parked vehicles, and driver accounts.
+
+### 2. Stored Functions and Procedures
+- **`fn_get_available_slots_count(p_area_id BIGINT)`**:
+  Stored PL/pgSQL function returning the real-time count of available slots in a given parking area.
+- **`fn_calculate_estimated_fee(p_area_id BIGINT, p_vehicle_type VARCHAR, p_slot_type VARCHAR, p_hours NUMERIC)`**:
+  Stored PL/pgSQL function that queries `parking_rates` and returns the estimated billing total for planned duration.
+- **`sp_record_maintenance(p_slot_id BIGINT, p_reason TEXT, p_start_time TIMESTAMPTZ, p_end_time TIMESTAMPTZ)`**:
+  PL/pgSQL stored procedure that transactionally inserts a maintenance record and sets `parking_slots.status = 'maintenance'`.
+
+### 3. Triggers
+- **`trg_maintenance_slot_status`**:
+  An `AFTER INSERT OR UPDATE OF status ON maintenance` trigger that executes `trg_fn_sync_slot_maintenance()`. Automatically transitions `parking_slots.status` to `'maintenance'` when a maintenance window is scheduled or in-progress, and releases it back to `'available'` upon completion or cancellation.
+

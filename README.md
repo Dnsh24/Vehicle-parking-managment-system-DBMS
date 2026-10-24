@@ -181,12 +181,14 @@ schema:
 
 ```text
 psql -U <user> -d vehicle_parking -f database/seed_phase1.sql
+psql -U <user> -d vehicle_parking -f database/seed_phase4_admin.sql
+psql -U <user> -d vehicle_parking -f database/seed_sample_data.sql
 ```
 
-The seed creates three Mall Central floor areas with 32 slots each. It includes
-four truck slots, ten bike/scooter slots, twelve normal car slots, three EV
-slots, and three handicapped slots per floor. It uses example availability
-states and must not be used as production data.
+The seed scripts create:
+- **`seed_phase1.sql`**: Three Mall Central floor areas with 32 slots each (96 slots total).
+- **`seed_phase4_admin.sql`**: Administrator account (`dnshneela@gmail.com`), baseline rates, and maintenance.
+- **`seed_sample_data.sql`**: Comprehensive evaluation sample data (at least 10-12 records in every major table: `users`, `vehicles`, `parking_areas`, `parking_rates`, `reservations`, `parking_sessions`, `payments`, `notifications`, `maintenance`).
 
 ### Backend
 
