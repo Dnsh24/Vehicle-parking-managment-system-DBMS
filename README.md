@@ -8,7 +8,7 @@ frontend, a C++ backend using Crow, and a PostgreSQL database.
 | Component | Status |
 | --- | --- |
 | Frontend | Authentication, parking availability, vehicles, reservations, active sessions, history, notifications, and administrator management implemented. |
-| PostgreSQL | Schema implemented with 14 core tables, constraints, and indexes; Phase 8 notification indexes are in `database/phase8_history_notifications.sql`. See [database.md](database.md). |
+| PostgreSQL | Schema implemented with 12 core tables, constraints, and indexes; Phase 8 notification indexes are in `database/phase8_history_notifications.sql`. See [database.md](database.md). |
 | C++ backend | Crow server with PostgreSQL access, bearer authentication, transactional reservations and sessions, manual exit billing, history, notifications, and administration. |
 | REST API | Health, authentication, profile, parking availability, vehicles, reservations, sessions, history, notifications, and administrator endpoints implemented. |
 | Frontend-backend integration | Browser `fetch` integration targets `http://localhost:3000`; live Phase 8 database end-to-end verification remains. |
@@ -45,8 +45,6 @@ HTML/CSS/JavaScript frontend
 Authentication, profiles, parking availability, vehicle management, basic
 administrator management and maintenance, reservations, manual check-in and
 exit, fee summaries, history, and in-app notifications are implemented.
-Automated expiry, QR processing, online payment processing, and advanced
-reporting remain planned.
 
 ## Implemented features
 
@@ -67,7 +65,7 @@ reporting remain planned.
 ### Backend
 
 - Creates a Crow application with CORS middleware.
-- Attempts a PostgreSQL connection to the `parking_management` database.
+- Attempts a PostgreSQL connection to the `vehicle_parking` database.
 - Executes `SELECT 1` when the connection is established.
 - Provides bearer-session authentication and profile operations.
 - Loads parking areas and slots from PostgreSQL.
@@ -82,19 +80,8 @@ reporting remain planned.
 
 ### Database
 
-- Defines the 14 core tables documented in [database.md](database.md).
-- Uses `pgcrypto` and `gen_random_uuid()` for QR token generation.
+- Defines the 12 core tables documented in [database.md](database.md).
 - Defines primary keys, foreign keys, checks, unique constraints, and indexes.
-
-## Planned features
-
-The following are described in [planning.md](planning.md) but are not yet
-implemented as complete application functionality:
-
-- Automated reservation expiry
-- QR-based check-in and vehicle entry
-- Online payment processing, refunds, and digital receipts
-- Advanced fee rules, external notifications, and reporting
 
 ## Actual project structure
 
@@ -148,27 +135,27 @@ a local static HTTP server. The page expects the backend at
 
 ### Database
 
-Create a PostgreSQL database named `parking_management`, then run:
+Create a PostgreSQL database named `vehicle_parking`, then run:
 
 ```text
-psql -U <user> -d parking_management -f database/schema.sql
+psql -U <user> -d vehicle_parking -f database/schema.sql
 ```
 
-The schema file creates the `pgcrypto` extension and all 14 tables. Do not put
+The schema file creates the `pgcrypto` extension and all 12 tables. Do not put
 real passwords in documentation or source code.
 
 For an existing database created before Phase 2 authentication, run the
 repeatable migration:
 
 ```text
-psql -U <user> -d parking_management -f database/phase2_auth.sql
+psql -U <user> -d vehicle_parking -f database/phase2_auth.sql
 ```
 
 Apply the Phase 3 parking-assignment migration after the schema, any Phase 2
 migration, and any optional seed data, but before starting the updated backend:
 
 ```text
-psql -U <user> -d parking_management -f database/phase3_vehicle_parking.sql
+psql -U <user> -d vehicle_parking -f database/phase3_vehicle_parking.sql
 ```
 
 This migration creates the active parking-assignment table, clears seeded
@@ -182,7 +169,7 @@ For an existing database, add the vehicle accessibility preference before
 starting the updated backend:
 
 ```text
-psql -U <user> -d parking_management -f database/phase6_accessible_parking.sql
+psql -U <user> -d vehicle_parking -f database/phase6_accessible_parking.sql
 ```
 
 This migration defaults existing vehicles to not requiring accessible parking.
@@ -193,7 +180,7 @@ For local Phase 1 development data, run the repeatable seed script after the
 schema:
 
 ```text
-psql -U <user> -d parking_management -f database/seed_phase1.sql
+psql -U <user> -d vehicle_parking -f database/seed_phase1.sql
 ```
 
 The seed creates three Mall Central floor areas with 32 slots each. It includes
@@ -218,7 +205,7 @@ environment. The other variables have local-development defaults:
 ```text
 PARKING_DB_HOST=localhost
 PARKING_DB_PORT=5432
-PARKING_DB_NAME=parking_management
+PARKING_DB_NAME=vehicle_parking
 PARKING_DB_USER=postgres
 PARKING_DB_PASSWORD=<your-local-password>
 PARKING_SERVER_PORT=3000
@@ -244,7 +231,7 @@ server port. The backend exits with a configuration error if
 
 ## Limitations and next steps
 
-The project has implemented the Version 1 core parking workflow through Phase 8.
+The project has implemented the core parking workflow through Phase 8.
 Live database end-to-end verification for Phase 8 and production deployment
 remain outstanding. Input validation, secrets management, and operational
 hardening remain necessary before the system can be considered complete.

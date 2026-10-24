@@ -25,7 +25,7 @@ int main()
     const BackendConfig defaults = BackendConfig::fromEnvironment();
     assert(defaults.database_host == "localhost");
     assert(defaults.database_port == "5432");
-    assert(defaults.database_name == "parking_management");
+    assert(defaults.database_name == "vehicle_parking");
     assert(defaults.database_user == "postgres");
     assert(defaults.server_port == 3000);
 

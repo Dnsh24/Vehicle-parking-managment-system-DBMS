@@ -3,7 +3,7 @@
 ## Overview
 
 `database/schema.sql` defines the PostgreSQL database for the project. It
-creates the `pgcrypto` extension, 14 core tables, foreign keys, constraints,
+creates the `pgcrypto` extension, 12 core tables, foreign keys, constraints,
 and explicit indexes inside a transaction. The schema is a database design;
 it does not mean that all related backend services or frontend features are
 implemented.
@@ -137,19 +137,6 @@ Stores planned parking bookings.
 | `status` | `VARCHAR(20)` | `NOT NULL`, default `'pending'`; six reservation statuses | Reservation status |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Creation time |
 
-### `qr_tokens`
-
-Stores one QR token per reservation.
-
-| Column | Type | Constraints and default | Purpose |
-| --- | --- | --- | --- |
-| `qr_token_id` | `BIGINT` identity | Primary key | Token row identifier |
-| `reservation_id` | `BIGINT` | `NOT NULL`, `UNIQUE`; FK to reservations, `ON DELETE CASCADE` | Reservation |
-| `token` | `UUID` | `NOT NULL`, `UNIQUE`, default `gen_random_uuid()` | QR value |
-| `expires_at` | `TIMESTAMPTZ` | `NOT NULL` | Expiry |
-| `is_used` | `BOOLEAN` | `NOT NULL`, default `FALSE` | Consumption flag |
-| `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Creation time |
-
 ### `parking_sessions`
 
 Stores actual parking sessions.
@@ -200,23 +187,6 @@ Stores payment attempts and results.
 | `paid_at` | `TIMESTAMPTZ` | Nullable; required when status is `successful` | Payment time |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Creation time |
 
-### `receipts`
-
-Stores one receipt per payment.
-
-| Column | Type | Constraints and default | Purpose |
-| --- | --- | --- | --- |
-| `receipt_id` | `BIGINT` identity | Primary key | Receipt identifier |
-| `payment_id` | `BIGINT` | `NOT NULL`, `UNIQUE`; FK, `ON DELETE RESTRICT` | Payment |
-| `reservation_id` | `BIGINT` | `NOT NULL`; FK, `ON DELETE RESTRICT` | Reservation |
-| `session_id` | `BIGINT` | `NOT NULL`; FK, `ON DELETE RESTRICT` | Session |
-| `receipt_number` | `VARCHAR(50)` | `NOT NULL`, `UNIQUE` | Human-readable number |
-| `base_fee` | `NUMERIC(10,2)` | `NOT NULL`, default `0`, non-negative | Base fee |
-| `overstay_fee` | `NUMERIC(10,2)` | `NOT NULL`, default `0`, non-negative | Overstay fee |
-| `additional_charges` | `NUMERIC(10,2)` | `NOT NULL`, default `0`, non-negative | Other charges |
-| `total_amount` | `NUMERIC(10,2)` | `NOT NULL`, non-negative | Total |
-| `generated_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Generation time |
-
 ### `notifications`
 
 Stores user notifications.
@@ -239,12 +209,9 @@ Stores user notifications.
 - `parking_assignments` links a user and vehicle to a parking slot until checkout.
 - `parking_slots` has many `parking_assignments`, `reservations`,
   `parking_sessions`, and `maintenance` records.
-- `reservations` references one user, vehicle, and slot, and can have one
-  `qr_tokens` row and at most one `parking_sessions` row because those foreign
-  keys are unique.
+- `reservations` references one user, vehicle, and slot, and can have at most one
+  `parking_sessions` row because that foreign key is unique.
 - `payments` references one reservation and optionally one session.
-- `receipts` references one payment, one reservation, and one session;
-  `payment_id` is unique, so a payment has at most one receipt.
 
 A unique foreign key enforces at most one child for a parent; it does not
 require every parent to have a child.
@@ -253,9 +220,9 @@ require every parent to have a child.
 
 The schema uses identity primary keys, `NOT NULL`, unique constraints, domain
 checks, defaults, and foreign keys for referential integrity. `CASCADE` is
-used for vehicles, slots, rates, QR tokens, maintenance, and notifications
+used for vehicles, slots, rates, maintenance, and notifications
 where dependent rows may be removed with their parent. `RESTRICT` protects
-reservations, sessions, payments, and receipts from deletion while dependent
+reservations, sessions, and payments from deletion while dependent
 records refer to them.
 
 Explicit indexes, by name and columns:
@@ -270,7 +237,6 @@ idx_reservations_vehicle_id (vehicle_id)
 idx_reservations_slot_id (slot_id)
 idx_reservations_status (status)
 idx_reservations_time (start_time, end_time)
-idx_qr_tokens_token (token)
 idx_parking_sessions_user_id (user_id)
 idx_parking_sessions_vehicle_id (vehicle_id)
 idx_parking_sessions_slot_id (slot_id)
@@ -280,7 +246,6 @@ idx_maintenance_status (status)
 idx_payments_user_id (user_id)
 idx_payments_reservation_id (reservation_id)
 idx_payments_status (status)
-idx_receipts_reservation_id (reservation_id)
 idx_notifications_user_id (user_id)
 idx_notifications_unread (user_id, is_read)
 ```
@@ -323,7 +288,7 @@ The script is safe to run repeatedly without creating duplicates.
 
 The schema uses relational entities and foreign-key relationships, domain
 constraints, unique business keys, and indexes. It separates users, vehicles,
-locations, bookings, sessions, payments, receipts, and notifications into
+locations, bookings, sessions, payments, and notifications into
 related tables rather than storing all values in one record. This supports
 normalization of repeating entities, although a formal normal-form assessment
 would require reviewing business dependencies and future application rules.

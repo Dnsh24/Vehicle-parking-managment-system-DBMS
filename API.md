@@ -155,7 +155,7 @@ vehicle that does not exist or belongs to another user returns `404
 VEHICLE_NOT_FOUND`. An actively parked vehicle returns `409
 VEHICLE_CURRENTLY_PARKED` and must be checked out first. After checkout,
 deletion permanently removes the vehicle and its associated assignments,
-reservations, sessions, payments, and receipts in one database transaction.
+reservations, sessions, and payments in one database transaction.
 
 ### `GET /api/reservations/availability`
 
@@ -356,7 +356,7 @@ Successful response:
 {
   "status": "success",
   "message": "C++ backend connected to PostgreSQL",
-  "database": "parking_management"
+  "database": "vehicle_parking"
 }
 ```
 
@@ -535,15 +535,3 @@ Removes a maintenance record.
 `frontend/js/app.js` calls the documented routes using `fetch` against
 `http://localhost:3000`. Vehicle requests include the authenticated bearer
 token.
-
-## Planned API work
-
-The following areas are planned, not implemented:
-
-- QR-token check-in
-- Automated reservation expiry
-- Online payment gateways, refunds, and receipts
-- Advanced fee rules, external notifications, and reporting
-
-Request and response contracts should be added here only when their routes are
-implemented and tested.

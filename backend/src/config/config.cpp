@@ -52,7 +52,7 @@ BackendConfig BackendConfig::fromEnvironment()
     return {
         getEnvironmentValue("PARKING_DB_HOST", "localhost"),
         getEnvironmentValue("PARKING_DB_PORT", "5432"),
-        getEnvironmentValue("PARKING_DB_NAME", "parking_management"),
+        getEnvironmentValue("PARKING_DB_NAME", "vehicle_parking"),
         getEnvironmentValue("PARKING_DB_USER", "postgres"),
         getEnvironmentValue("PARKING_DB_PASSWORD"),
         getPort("PARKING_SERVER_PORT", "3000")};

@@ -8,7 +8,7 @@ int main()
 {
     _putenv_s("PARKING_DB_HOST", "localhost");
     _putenv_s("PARKING_DB_PORT", "5432");
-    _putenv_s("PARKING_DB_NAME", "parking_management");
+    _putenv_s("PARKING_DB_NAME", "vehicle_parking");
     _putenv_s("PARKING_DB_USER", "postgres");
     _putenv_s("PARKING_DB_PASSWORD", "test-only-invalid-password");
 

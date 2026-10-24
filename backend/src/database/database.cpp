@@ -103,14 +103,6 @@ VehicleDeletionResult Database::deleteVehicleAndHistory(
     }
 
     transaction.exec_params(
-        "DELETE FROM receipts "
-        "WHERE reservation_id IN (SELECT reservation_id FROM reservations WHERE vehicle_id = $1) "
-        "OR session_id IN (SELECT session_id FROM parking_sessions WHERE vehicle_id = $1) "
-        "OR payment_id IN (SELECT payment_id FROM payments "
-        "WHERE reservation_id IN (SELECT reservation_id FROM reservations WHERE vehicle_id = $1) "
-        "OR session_id IN (SELECT session_id FROM parking_sessions WHERE vehicle_id = $1))",
-        vehicle_id);
-    transaction.exec_params(
         "DELETE FROM payments "
         "WHERE reservation_id IN (SELECT reservation_id FROM reservations WHERE vehicle_id = $1) "
         "OR session_id IN (SELECT session_id FROM parking_sessions WHERE vehicle_id = $1)",

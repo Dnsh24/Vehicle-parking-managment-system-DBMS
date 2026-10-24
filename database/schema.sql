@@ -1,6 +1,6 @@
 -- Vehicle Parking Management System
 -- PostgreSQL database schema
--- 14 core tables
+-- 12 core tables
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 BEGIN;
 
@@ -238,25 +238,7 @@ CREATE TABLE reservations (
 );
 
 -- ============================================================
--- 9. QR TOKENS
--- ============================================================
-
-CREATE TABLE qr_tokens (
-    qr_token_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    reservation_id BIGINT NOT NULL UNIQUE,
-    token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
-    expires_at TIMESTAMPTZ NOT NULL,
-    is_used BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT fk_qr_tokens_reservation
-        FOREIGN KEY (reservation_id)
-        REFERENCES reservations(reservation_id)
-        ON DELETE CASCADE
-);
-
--- ============================================================
--- 10. PARKING SESSIONS
+-- 9. PARKING SESSIONS
 -- ============================================================
 
 CREATE TABLE parking_sessions (
@@ -310,7 +292,7 @@ CREATE TABLE parking_sessions (
 );
 
 -- ============================================================
--- 11. MAINTENANCE
+-- 10. MAINTENANCE
 -- ============================================================
 
 CREATE TABLE maintenance (
@@ -335,7 +317,7 @@ CREATE TABLE maintenance (
 );
 
 -- ============================================================
--- 12. PAYMENTS
+-- 11. PAYMENTS
 -- ============================================================
 
 CREATE TABLE payments (
@@ -383,51 +365,7 @@ CREATE TABLE payments (
 );
 
 -- ============================================================
--- 13. RECEIPTS
--- ============================================================
-
-CREATE TABLE receipts (
-    receipt_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    payment_id BIGINT NOT NULL UNIQUE,
-    reservation_id BIGINT NOT NULL,
-    session_id BIGINT NOT NULL,
-    receipt_number VARCHAR(50) NOT NULL UNIQUE,
-    base_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
-    overstay_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
-    additional_charges NUMERIC(10,2) NOT NULL DEFAULT 0,
-    total_amount NUMERIC(10,2) NOT NULL,
-    generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT fk_receipts_payment
-        FOREIGN KEY (payment_id)
-        REFERENCES payments(payment_id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT fk_receipts_reservation
-        FOREIGN KEY (reservation_id)
-        REFERENCES reservations(reservation_id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT fk_receipts_session
-        FOREIGN KEY (session_id)
-        REFERENCES parking_sessions(session_id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT receipts_base_fee_check
-        CHECK (base_fee >= 0),
-
-    CONSTRAINT receipts_overstay_fee_check
-        CHECK (overstay_fee >= 0),
-
-    CONSTRAINT receipts_additional_charges_check
-        CHECK (additional_charges >= 0),
-
-    CONSTRAINT receipts_total_check
-        CHECK (total_amount >= 0)
-);
-
--- ============================================================
--- 14. NOTIFICATIONS
+-- 12. NOTIFICATIONS
 -- ============================================================
 
 CREATE TABLE notifications (
@@ -476,9 +414,6 @@ CREATE INDEX idx_reservations_status
 CREATE INDEX idx_reservations_time
     ON reservations(start_time, end_time);
 
-CREATE INDEX idx_qr_tokens_token
-    ON qr_tokens(token);
-
 CREATE INDEX idx_parking_sessions_user_id
     ON parking_sessions(user_id);
 
@@ -505,9 +440,6 @@ CREATE INDEX idx_payments_reservation_id
 
 CREATE INDEX idx_payments_status
     ON payments(status);
-
-CREATE INDEX idx_receipts_reservation_id
-    ON receipts(reservation_id);
 
 CREATE INDEX idx_notifications_user_id
     ON notifications(user_id);
