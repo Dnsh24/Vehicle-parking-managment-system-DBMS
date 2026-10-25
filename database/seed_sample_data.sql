@@ -1,29 +1,31 @@
 -- Sample Data Seed Script for Vehicle Parking Management System
 -- Fulfills technical requirement: At least 10 records in each major table.
--- Safe to re-run (idempotent with ON CONFLICT / WHERE NOT EXISTS checks).
+-- Run once on a fresh database, after schema.sql, seed_phase1.sql and seed_phase4_admin.sql.
+-- (Users, vehicles, areas and rates are guarded against duplicates; reservations,
+-- sessions, notifications and maintenance are not, so do not run it twice.)
 
 BEGIN;
 
 -- ============================================================
 -- 1. USERS (At least 10 records)
 -- ============================================================
--- All sample users have the password hash for 'Password@123'
--- dnshneela is the administrator (from seed_phase4_admin.sql)
+-- Sample users (not the administrator) share one demo password hash for 'Password@123'
+-- dnshneela is the administrator (password set by seed_phase4_admin.sql; change it after first login)
 
 INSERT INTO users (name, email, username, password_hash, phone, role, is_active)
 VALUES
     ('Dinesh Neela', 'dnshneela@gmail.com', 'dnshneela', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543210', 'admin', TRUE),
-    ('Aarav Sharma', 'aarav.sharma@example.com', 'aarav_s', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543211', 'user', TRUE),
-    ('Priya Patel', 'priya.patel@example.com', 'priya_p', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543212', 'user', TRUE),
-    ('Rohan Verma', 'rohan.verma@example.com', 'rohan_v', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543213', 'user', TRUE),
-    ('Ananya Iyer', 'ananya.iyer@example.com', 'ananya_i', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543214', 'user', TRUE),
-    ('Vikram Malhotra', 'vikram.m@example.com', 'vikram_m', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543215', 'user', TRUE),
-    ('Sneha Reddy', 'sneha.reddy@example.com', 'sneha_r', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543216', 'user', TRUE),
-    ('Karan Joshi', 'karan.joshi@example.com', 'karan_j', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543217', 'user', TRUE),
-    ('Neha Gupta', 'neha.gupta@example.com', 'neha_g', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543218', 'user', TRUE),
-    ('Aditya Nair', 'aditya.nair@example.com', 'aditya_n', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543219', 'user', TRUE),
-    ('Pooja Mehta', 'pooja.mehta@example.com', 'pooja_m', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543220', 'user', TRUE),
-    ('Siddharth Rao', 'siddharth.rao@example.com', 'sid_rao', 'pbkdf2_sha256$210000$99b8e38a15d9b9ef73dff7093b6d48a3$b967d9b28025edb7f722e7a69fce6075cab8460411bb5c544f37f6116ee862f0', '+919876543221', 'user', TRUE)
+    ('Aarav Sharma', 'aarav.sharma@example.com', 'aarav_s', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543211', 'user', TRUE),
+    ('Priya Patel', 'priya.patel@example.com', 'priya_p', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543212', 'user', TRUE),
+    ('Rohan Verma', 'rohan.verma@example.com', 'rohan_v', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543213', 'user', TRUE),
+    ('Ananya Iyer', 'ananya.iyer@example.com', 'ananya_i', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543214', 'user', TRUE),
+    ('Vikram Malhotra', 'vikram.m@example.com', 'vikram_m', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543215', 'user', TRUE),
+    ('Sneha Reddy', 'sneha.reddy@example.com', 'sneha_r', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543216', 'user', TRUE),
+    ('Karan Joshi', 'karan.joshi@example.com', 'karan_j', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543217', 'user', TRUE),
+    ('Neha Gupta', 'neha.gupta@example.com', 'neha_g', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543218', 'user', TRUE),
+    ('Aditya Nair', 'aditya.nair@example.com', 'aditya_n', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543219', 'user', TRUE),
+    ('Pooja Mehta', 'pooja.mehta@example.com', 'pooja_m', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543220', 'user', TRUE),
+    ('Siddharth Rao', 'siddharth.rao@example.com', 'sid_rao', 'pbkdf2_sha256$210000$5a9b11203e2449591d0a5b72a6850354$c1b26e58dcf9a115db3aec1394514da6f680a1de1658622cba7b385f1a6d67a3', '+919876543221', 'user', TRUE)
 ON CONFLICT (email) DO NOTHING;
 
 -- ============================================================
@@ -39,7 +41,7 @@ FROM (
         ('priya.patel@example.com', 'DL-03-CD-3003', 'car', TRUE, FALSE),
         ('rohan.verma@example.com', 'KA-04-EF-4004', 'bike', FALSE, FALSE),
         ('ananya.iyer@example.com', 'TN-05-GH-5005', 'scooter', TRUE, FALSE),
-        ('vikram.malhotra@example.com', 'HR-06-IJ-6006', 'car', FALSE, TRUE),
+        ('vikram.m@example.com', 'HR-06-IJ-6006', 'car', FALSE, TRUE),
         ('sneha.reddy@example.com', 'AP-07-KL-7007', 'car', FALSE, FALSE),
         ('karan.joshi@example.com', 'MH-12-MN-8008', 'bike', FALSE, FALSE),
         ('neha.gupta@example.com', 'UP-16-OP-9009', 'scooter', FALSE, FALSE),
@@ -55,13 +57,16 @@ ON CONFLICT (registration_number) DO NOTHING;
 -- ============================================================
 
 INSERT INTO parking_areas (name, location, operating_hours, capacity, status)
-VALUES
-    ('Mall Central - Ground Floor', 'Central Mall, MG Road', '07:00 - 23:00', 32, 'active'),
-    ('Mall Central - First Floor', 'Central Mall, MG Road', '07:00 - 23:00', 32, 'active'),
-    ('Mall Central - Second Floor', 'Central Mall, MG Road', '07:00 - 23:00', 32, 'active'),
-    ('Tech Park - Basement A', 'Whitefield IT Corridor', '24/7', 40, 'active'),
-    ('Metro Station Parking', 'Indiranagar Metro Station', '05:00 - 00:00', 25, 'active')
-ON CONFLICT DO NOTHING;
+SELECT a.name, a.location, a.operating_hours, a.capacity, a.status
+FROM (
+    VALUES
+        ('Mall Central - Ground Floor', 'Central Mall, MG Road', '07:00 - 23:00', 32, 'active'),
+        ('Mall Central - First Floor', 'Central Mall, MG Road', '07:00 - 23:00', 32, 'active'),
+        ('Mall Central - Second Floor', 'Central Mall, MG Road', '07:00 - 23:00', 32, 'active'),
+        ('Tech Park - Basement A', 'Whitefield IT Corridor', '24/7', 40, 'active'),
+        ('Metro Station Parking', 'Indiranagar Metro Station', '05:00 - 00:00', 25, 'active')
+) AS a(name, location, operating_hours, capacity, status)
+WHERE NOT EXISTS (SELECT 1 FROM parking_areas e WHERE e.name = a.name);
 
 -- ============================================================
 -- 4. PARKING RATES (Comprehensive rules across vehicle types)
@@ -82,7 +87,7 @@ CROSS JOIN (
 ON CONFLICT (area_id, vehicle_type, slot_type) DO NOTHING;
 
 -- ============================================================
--- 5. RESERVATIONS (At least 12 records)
+-- 5. RESERVATIONS (12 records: 10 completed, 1 active, 1 confirmed)
 -- ============================================================
 
 DO $$
@@ -104,10 +109,9 @@ BEGIN
                 CURRENT_TIMESTAMP - (INTERVAL '1 day' * i) - INTERVAL '2 hours',
                 CURRENT_TIMESTAMP - (INTERVAL '1 day' * i) + INTERVAL '2 hours',
                 CASE 
-                    WHEN i <= 8 THEN 'completed'
-                    WHEN i = 9 THEN 'confirmed'
-                    WHEN i = 10 THEN 'active'
-                    ELSE 'cancelled'
+                    WHEN i <= 10 THEN 'completed'
+                    WHEN i = 11 THEN 'active'
+                    ELSE 'confirmed'
                 END
             )
             ON CONFLICT DO NOTHING;
@@ -117,7 +121,7 @@ BEGIN
 END $$;
 
 -- ============================================================
--- 6. PARKING SESSIONS (At least 10 records)
+-- 6. PARKING SESSIONS (11 records: 10 completed, 1 active)
 -- ============================================================
 
 DO $$
@@ -125,7 +129,7 @@ DECLARE
     r_res RECORD;
     i INT := 1;
 BEGIN
-    FOR r_res IN (SELECT reservation_id, user_id, vehicle_id, slot_id, start_time FROM reservations WHERE status IN ('completed', 'active') ORDER BY reservation_id LIMIT 10) LOOP
+    FOR r_res IN (SELECT reservation_id, user_id, vehicle_id, slot_id, start_time FROM reservations WHERE status IN ('completed', 'active') ORDER BY reservation_id LIMIT 11) LOOP
         INSERT INTO parking_sessions (
             reservation_id, user_id, vehicle_id, slot_id,
             entry_time, exit_time, duration_minutes, status, overstay_duration_minutes, calculated_fee
@@ -136,11 +140,11 @@ BEGIN
             r_res.vehicle_id,
             r_res.slot_id,
             r_res.start_time + INTERVAL '5 minutes',
-            CASE WHEN i <= 8 THEN r_res.start_time + INTERVAL '125 minutes' ELSE NULL END,
-            CASE WHEN i <= 8 THEN 120 ELSE 45 END,
-            CASE WHEN i <= 8 THEN 'completed' ELSE 'active' END,
+            CASE WHEN i <= 10 THEN r_res.start_time + INTERVAL '125 minutes' ELSE NULL END,
+            CASE WHEN i <= 10 THEN 120 ELSE 45 END,
+            CASE WHEN i <= 10 THEN 'completed' ELSE 'active' END,
             0,
-            CASE WHEN i <= 8 THEN 80.00 ELSE 40.00 END
+            CASE WHEN i <= 10 THEN 80.00 ELSE 40.00 END
         )
         ON CONFLICT (reservation_id) DO NOTHING;
         i := i + 1;
