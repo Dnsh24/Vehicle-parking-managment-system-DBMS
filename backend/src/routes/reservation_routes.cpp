@@ -157,6 +157,7 @@ void registerReservationRoutes(
             {
                 return unauthorized();
             }
+            database.cancelOverdueReservations();
 
             const std::string vehicle_id_value = queryValue(request, "vehicle_id");
             const std::string start_time = queryValue(request, "start_time");
@@ -282,6 +283,7 @@ void registerReservationRoutes(
             {
                 return unauthorized();
             }
+            database.cancelOverdueReservations();
             const pqxx::result rows = database.executeRead(
                 reservationDetailsQuery +
                 "WHERE r.user_id = $1 ORDER BY r.start_time DESC, r.reservation_id DESC",
@@ -382,6 +384,8 @@ void registerReservationRoutes(
                 return api::errorResponse(409, "CHECK_IN_NOT_OPEN", "Check-in opens at the reservation start time.");
             case ReservationCheckInStatus::expired:
                 return api::errorResponse(409, "RESERVATION_EXPIRED", "The reservation end time has passed.");
+            case ReservationCheckInStatus::grace_period_exceeded:
+                return api::errorResponse(409, "CHECK_IN_GRACE_PERIOD_EXCEEDED", "The 5-minute check-in grace period has expired. The reservation has been cancelled.");
             case ReservationCheckInStatus::slot_unavailable:
                 return api::errorResponse(409, "PARKING_SLOT_UNAVAILABLE", "The reserved slot is unavailable or under maintenance.");
             case ReservationCheckInStatus::vehicle_unavailable:

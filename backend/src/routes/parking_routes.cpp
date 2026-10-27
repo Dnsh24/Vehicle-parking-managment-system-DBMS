@@ -121,20 +121,27 @@ void registerParkingRoutes(
                 "parking.is_electric AS parked_vehicle_is_electric, "
                 "to_char(parking.parked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS parked_at, "
                 "EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - parking.parked_at))::BIGINT AS parked_seconds, "
+                "parking.planned_end_time, "
                 "parking.assignment_id "
                 "FROM parking_slots ps "
                 "LEFT JOIN LATERAL ("
                 "SELECT active.vehicle_registration, active.vehicle_type, active.is_electric, "
-                "active.parked_at, active.assignment_id "
+                "active.parked_at, active.planned_end_time, active.assignment_id "
                 "FROM ("
                 "SELECT v.registration_number AS vehicle_registration, v.vehicle_type, v.is_electric, "
-                "a.parked_at, a.assignment_id "
+                "a.parked_at, "
+                "to_char(a.planned_end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS planned_end_time, "
+                "a.assignment_id "
                 "FROM parking_assignments a JOIN vehicles v ON v.vehicle_id = a.vehicle_id "
                 "WHERE a.slot_id = ps.slot_id AND a.checkout_at IS NULL "
                 "UNION ALL "
                 "SELECT v.registration_number AS vehicle_registration, v.vehicle_type, v.is_electric, "
-                "s.entry_time AS parked_at, NULL::BIGINT AS assignment_id "
-                "FROM parking_sessions s JOIN vehicles v ON v.vehicle_id = s.vehicle_id "
+                "s.entry_time AS parked_at, "
+                "to_char(r.end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS planned_end_time, "
+                "NULL::BIGINT AS assignment_id "
+                "FROM parking_sessions s "
+                "JOIN reservations r ON r.reservation_id = s.reservation_id "
+                "JOIN vehicles v ON v.vehicle_id = s.vehicle_id "
                 "WHERE s.slot_id = ps.slot_id AND s.exit_time IS NULL "
                 "AND s.status IN ('active', 'overstayed')"
                 ") active ORDER BY active.parked_at DESC LIMIT 1"
@@ -167,6 +174,10 @@ void registerParkingRoutes(
                     if (!row["assignment_id"].is_null())
                     {
                         slot["assignment_id"] = row["assignment_id"].as<std::int64_t>();
+                    }
+                    if (!row["planned_end_time"].is_null())
+                    {
+                        slot["planned_end_time"] = row["planned_end_time"].c_str();
                     }
                 }
                 response["slots"][slot_index++] = std::move(slot);

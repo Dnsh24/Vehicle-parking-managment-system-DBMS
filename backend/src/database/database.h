@@ -22,6 +22,14 @@ enum class VehicleDeletionResult
     currently_parked
 };
 
+enum class UserDeletionResult
+{
+    deleted,
+    not_found,
+    active_parking,
+    future_reservations
+};
+
 enum class ReservationCreationStatus
 {
     created,
@@ -38,6 +46,7 @@ enum class ReservationCheckInStatus
     not_confirmed,
     too_early,
     expired,
+    grace_period_exceeded,
     slot_unavailable,
     vehicle_unavailable
 };
@@ -90,6 +99,7 @@ struct VehicleParkingResult
     std::string slot_number;
     std::string area_name;
     std::string parked_at;
+    std::string planned_end_time;
 };
 
 class Database
@@ -103,6 +113,8 @@ public:
     VehicleDeletionResult deleteVehicleAndHistory(
         std::int64_t vehicle_id,
         std::int64_t user_id) const;
+    UserDeletionResult deleteUserAndHistory(
+        std::int64_t target_user_id) const;
     ReservationCreationResult createReservation(
         std::int64_t user_id,
         std::int64_t vehicle_id,
@@ -115,6 +127,7 @@ public:
     ReservationCancellationStatus cancelReservation(
         std::int64_t user_id,
         std::int64_t reservation_id) const;
+    void cancelOverdueReservations() const;
     SessionExitResult exitParkingSession(
         std::int64_t user_id,
         std::int64_t session_id,
@@ -125,10 +138,10 @@ public:
     VehicleParkingResult parkVehicle(
         std::int64_t user_id,
         std::int64_t vehicle_id,
-        std::int64_t slot_id) const;
-
-private:
+        std::int64_t slot_id,
+        int duration_minutes = 120) const;
     pqxx::connection createConnection() const;
 
+private:
     BackendConfig config_;
 };

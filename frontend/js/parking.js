@@ -302,6 +302,10 @@ if (refreshButton) {
 
 if (changeAreaButton) {
     changeAreaButton.addEventListener("click", () => {
-        window.alert("Mall Central floors are available in the floor selector.");
+        showAppNotice({
+            title: "Floor & Area Selection",
+            message: "Mall Central floors are available in the floor selector tab bar above the parking layout.",
+            type: "info"
+        });
     });
 }

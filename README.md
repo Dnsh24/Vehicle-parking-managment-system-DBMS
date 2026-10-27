@@ -229,7 +229,9 @@ server port. The backend exits with a configuration error if
 - [planning.md](planning.md) — requirements, progress, and next steps
 - [database.md](database.md) — exact PostgreSQL schema documentation
 - [API.md](API.md) — implemented API routes and pending API work
-- [OOPS.md](OOPS.md) — C++ object-oriented programming analysis
+
+## Final Version
+This is the final version of the Vehicle Parking Management System project.
 
 ## Limitations and next steps
 

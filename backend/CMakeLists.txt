@@ -133,4 +133,26 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME admin_tests COMMAND admin_tests)
+
+    add_executable(fee_tests
+        tests/fee_tests.cpp
+        src/api/fee_calculator.h
+        src/api/session_responses.h
+    )
+
+    target_include_directories(fee_tests
+        PRIVATE
+        src
+    )
+
+    target_link_libraries(fee_tests
+        PRIVATE
+        Crow::Crow
+    )
+    if(WIN32)
+        target_link_libraries(fee_tests PRIVATE ws2_32)
+    endif()
+
+    add_test(NAME fee_tests COMMAND fee_tests)
+
 endif()

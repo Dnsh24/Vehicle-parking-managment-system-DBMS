@@ -118,3 +118,280 @@ async function adminApiCall(endpoint, method = "GET", body = null) {
     }
     return data;
 }
+
+
+// =====================================================================
+// In-App Toast & Modal Notice System
+// =====================================================================
+
+function showToast(message, type = "info", title = "") {
+    const container = document.getElementById("toastContainer");
+    if (!container || !message) return;
+
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+
+    let icon = "ℹ️";
+    let defaultTitle = "Notice";
+    if (type === "success") {
+        icon = "✅";
+        defaultTitle = "Success";
+    } else if (type === "warning") {
+        icon = "⏰";
+        defaultTitle = "Attention";
+    } else if (type === "error" || type === "danger") {
+        icon = "❌";
+        defaultTitle = "Error";
+    }
+
+    const iconEl = document.createElement("div");
+    iconEl.className = "toast-icon";
+    iconEl.textContent = icon;
+
+    const contentEl = document.createElement("div");
+    contentEl.className = "toast-content";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "toast-title";
+    titleEl.textContent = title || defaultTitle;
+
+    const msgEl = document.createElement("div");
+    msgEl.className = "toast-message";
+    msgEl.textContent = message;
+
+    contentEl.append(titleEl, msgEl);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "toast-close";
+    closeBtn.type = "button";
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", "Close notification");
+
+    const removeToast = () => {
+        if (toast.classList.contains("toast-closing")) return;
+        toast.classList.add("toast-closing");
+        setTimeout(() => toast.remove(), 220);
+    };
+
+    closeBtn.addEventListener("click", removeToast);
+    setTimeout(removeToast, 5000);
+
+    toast.append(iconEl, contentEl, closeBtn);
+    container.prepend(toast);
+}
+
+function showAppNotice({
+    title = "Notice",
+    message = "",
+    type = "info", // "info" | "success" | "warning" | "danger"
+    subtitle = "",
+    details = null, // array of { label, value } or object
+    confirmText = "Got It"
+} = {}) {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById("appNoticeDialog");
+        if (!dialog) {
+            window.alert(`${title}\n\n${message}`);
+            resolve(true);
+            return;
+        }
+
+        const iconEl = document.getElementById("appNoticeIcon");
+        const titleEl = document.getElementById("appNoticeTitle");
+        const subtitleEl = document.getElementById("appNoticeSubtitle");
+        const messageEl = document.getElementById("appNoticeMessage");
+        const detailsEl = document.getElementById("appNoticeDetails");
+        const confirmBtn = document.getElementById("confirmAppNoticeButton");
+        const cancelBtn = document.getElementById("cancelAppNoticeButton");
+        const closeBtn = document.getElementById("closeAppNoticeButton");
+
+        if (titleEl) titleEl.textContent = title;
+        if (subtitleEl) {
+            subtitleEl.textContent = subtitle;
+            subtitleEl.style.display = subtitle ? "block" : "none";
+        }
+        if (messageEl) messageEl.textContent = message;
+
+        // Icons & style mapping
+        let emoji = "ℹ️";
+        let badgeClass = "is-info";
+        if (type === "success") {
+            emoji = "✅";
+            badgeClass = "is-success";
+        } else if (type === "warning") {
+            emoji = "⏰";
+            badgeClass = "is-warning";
+        } else if (type === "danger" || type === "error") {
+            emoji = "❌";
+            badgeClass = "is-danger";
+        }
+        if (iconEl) {
+            iconEl.className = `app-notice-icon-badge ${badgeClass}`;
+            iconEl.textContent = emoji;
+        }
+
+        // Details breakdown
+        if (detailsEl) {
+            detailsEl.replaceChildren();
+            if (details && Array.isArray(details) && details.length > 0) {
+                detailsEl.style.display = "flex";
+                details.forEach((row) => {
+                    const rowEl = document.createElement("div");
+                    rowEl.className = "app-notice-row";
+                    const labelEl = document.createElement("span");
+                    labelEl.className = "label";
+                    labelEl.textContent = row.label;
+                    const valEl = document.createElement("span");
+                    valEl.className = "val";
+                    valEl.textContent = row.value;
+                    rowEl.append(labelEl, valEl);
+                    detailsEl.append(rowEl);
+                });
+            } else if (details && typeof details === "object" && Object.keys(details).length > 0) {
+                detailsEl.style.display = "flex";
+                Object.entries(details).forEach(([key, val]) => {
+                    const rowEl = document.createElement("div");
+                    rowEl.className = "app-notice-row";
+                    const labelEl = document.createElement("span");
+                    labelEl.className = "label";
+                    labelEl.textContent = key;
+                    const valEl = document.createElement("span");
+                    valEl.className = "val";
+                    valEl.textContent = String(val);
+                    rowEl.append(labelEl, valEl);
+                    detailsEl.append(rowEl);
+                });
+            } else {
+                detailsEl.style.display = "none";
+            }
+        }
+
+        if (confirmBtn) {
+            confirmBtn.textContent = confirmText;
+            confirmBtn.className = type === "danger" || type === "error" ? "danger" : "refresh-button";
+        }
+        if (cancelBtn) {
+            cancelBtn.style.display = "none";
+        }
+
+        const cleanup = () => {
+            confirmBtn?.removeEventListener("click", onConfirm);
+            cancelBtn?.removeEventListener("click", onCancel);
+            closeBtn?.removeEventListener("click", onCancel);
+            dialog.removeEventListener("cancel", onCancel);
+        };
+
+        const onConfirm = () => {
+            cleanup();
+            dialog.close();
+            resolve(true);
+        };
+
+        const onCancel = () => {
+            cleanup();
+            dialog.close();
+            resolve(false);
+        };
+
+        confirmBtn?.addEventListener("click", onConfirm);
+        closeBtn?.addEventListener("click", onCancel);
+        dialog.addEventListener("cancel", onCancel);
+
+        dialog.showModal();
+        confirmBtn?.focus();
+    });
+}
+
+function showAppConfirm({
+    title = "Confirm Action",
+    message = "",
+    type = "warning",
+    confirmText = "Confirm",
+    cancelText = "Cancel",
+    details = null
+} = {}) {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById("appNoticeDialog");
+        if (!dialog) {
+            resolve(window.confirm(`${title}\n\n${message}`));
+            return;
+        }
+
+        const iconEl = document.getElementById("appNoticeIcon");
+        const titleEl = document.getElementById("appNoticeTitle");
+        const subtitleEl = document.getElementById("appNoticeSubtitle");
+        const messageEl = document.getElementById("appNoticeMessage");
+        const detailsEl = document.getElementById("appNoticeDetails");
+        const confirmBtn = document.getElementById("confirmAppNoticeButton");
+        const cancelBtn = document.getElementById("cancelAppNoticeButton");
+        const closeBtn = document.getElementById("closeAppNoticeButton");
+
+        if (titleEl) titleEl.textContent = title;
+        if (subtitleEl) subtitleEl.style.display = "none";
+        if (messageEl) messageEl.textContent = message;
+
+        let emoji = type === "danger" ? "⚠️" : "❓";
+        let badgeClass = type === "danger" ? "is-danger" : "is-warning";
+        if (iconEl) {
+            iconEl.className = `app-notice-icon-badge ${badgeClass}`;
+            iconEl.textContent = emoji;
+        }
+
+        if (detailsEl) {
+            detailsEl.replaceChildren();
+            if (details && Array.isArray(details) && details.length > 0) {
+                detailsEl.style.display = "flex";
+                details.forEach((row) => {
+                    const rowEl = document.createElement("div");
+                    rowEl.className = "app-notice-row";
+                    const labelEl = document.createElement("span");
+                    labelEl.className = "label";
+                    labelEl.textContent = row.label;
+                    const valEl = document.createElement("span");
+                    valEl.className = "val";
+                    valEl.textContent = row.value;
+                    rowEl.append(labelEl, valEl);
+                    detailsEl.append(rowEl);
+                });
+            } else {
+                detailsEl.style.display = "none";
+            }
+        }
+
+        if (cancelBtn) {
+            cancelBtn.textContent = cancelText;
+            cancelBtn.style.display = "inline-block";
+        }
+        if (confirmBtn) {
+            confirmBtn.textContent = confirmText;
+            confirmBtn.className = type === "danger" ? "danger" : "refresh-button";
+        }
+
+        const cleanup = () => {
+            confirmBtn?.removeEventListener("click", onConfirm);
+            cancelBtn?.removeEventListener("click", onCancel);
+            closeBtn?.removeEventListener("click", onCancel);
+            dialog.removeEventListener("cancel", onCancel);
+        };
+
+        const onConfirm = () => {
+            cleanup();
+            dialog.close();
+            resolve(true);
+        };
+
+        const onCancel = () => {
+            cleanup();
+            dialog.close();
+            resolve(false);
+        };
+
+        confirmBtn?.addEventListener("click", onConfirm);
+        cancelBtn?.addEventListener("click", onCancel);
+        closeBtn?.addEventListener("click", onCancel);
+        dialog.addEventListener("cancel", onCancel);
+
+        dialog.showModal();
+        confirmBtn?.focus();
+    });
+}

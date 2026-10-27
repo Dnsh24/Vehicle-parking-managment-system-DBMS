@@ -447,4 +447,7 @@ and relevant error-path tests pass.
 - [README.md](README.md) — overview, setup, and current implementation
 - [API.md](API.md) — verified REST endpoints only
 - [database.md](database.md) — actual PostgreSQL schema
-- [OOPS.md](OOPS.md) — actual C++ structure and OOP concepts
+## Final Version
+This is the final version of the Vehicle Parking Management System project.
+
+## Limitations and next steps

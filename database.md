@@ -425,7 +425,10 @@ These indexes support likely lookup patterns; performance improvements have not
 been benchmarked. Transactions are used by the schema file while creating the
 objects. Reservation creation/cancellation, check-in, and session exit use
 application transactions; related notifications are inserted atomically with
-those workflow changes.
+those workflow changes. Check-in enforces a 5-minute late grace period from the
+reservation start time; if check-in is attempted or overdue beyond 5 minutes,
+the reservation is automatically cancelled, the slot is released, and a cancellation
+notification is recorded.
 
 ## Phase 1 development seed
 
@@ -510,3 +513,10 @@ A relation is in 3NF if it is in 2NF and no non-key attribute is transitively de
 - **`trg_maintenance_slot_status`**:
   An `AFTER INSERT OR UPDATE OF status ON maintenance` trigger that executes `trg_fn_sync_slot_maintenance()`. Automatically transitions `parking_slots.status` to `'maintenance'` when a maintenance window is scheduled or in-progress, and releases it back to `'available'` upon completion or cancellation.
 
+
+
+### 4. Phase 9 Migration: Planned Duration and Overtime (`database/phase9_planned_duration_and_overtime.sql`)
+- Adds `planned_end_time TIMESTAMPTZ` column to `parking_assignments`.
+- Safely backfills existing rows with `COALESCE(checkout_at, parked_at + INTERVAL '2 hours')`.
+- Adds constraint `parking_assignments_planned_end_check` ensuring `planned_end_time >= parked_at`.
+- Adds partial index `idx_parking_assignments_active_planned_end` on `parking_assignments(planned_end_time) WHERE checkout_at IS NULL`.

@@ -10,9 +10,13 @@ const cancelVehicleEdit = document.getElementById("cancelVehicleEdit");
 const vehicleAfterAddField = document.getElementById("vehicleAfterAddField");
 
 function setVehicleMessage(message, isError = false) {
-    if (!vehicleMessage) return;
-    vehicleMessage.textContent = message;
-    vehicleMessage.classList.toggle("is-error", isError);
+    if (vehicleMessage) {
+        vehicleMessage.textContent = message;
+        vehicleMessage.classList.toggle("is-error", isError);
+    }
+    if (message && typeof showToast === "function") {
+        showToast(message, isError ? "error" : "success");
+    }
 }
 
 function resetVehicleForm() {
@@ -48,7 +52,11 @@ function renderVehicles(vehicles) {
         details.append(registration, description);
         if (vehicle.parking) {
             const parking = document.createElement("p");
-            parking.textContent = `Parked at ${vehicle.parking.area_name} · ${vehicle.parking.slot_number}`;
+            let text = `Parked at ${vehicle.parking.area_name} · ${vehicle.parking.slot_number}`;
+            if (vehicle.parking.planned_end_time) {
+                text += ` (Planned until: ${formatIsoTimestamp(vehicle.parking.planned_end_time)})`;
+            }
+            parking.textContent = text;
             details.append(parking);
         }
 
@@ -137,7 +145,23 @@ if (vehicleForm) {
             }
             resetVehicleForm();
             await loadVehicles();
+            const actionText = vehicleId ? "Vehicle Updated" : "Vehicle Added Successfully! 🚗";
             setVehicleMessage(vehicleId ? "Vehicle updated." : "Vehicle added.");
+            const v = data.vehicle;
+            if (v) {
+                await showAppNotice({
+                    title: actionText,
+                    message: `${v.registration_number} has been registered and is ready for parking or reservations.`,
+                    type: "success",
+                    details: [
+                        { label: "Registration No.", value: v.registration_number },
+                        { label: "Vehicle Type", value: v.vehicle_type.toUpperCase() },
+                        { label: "Electric Vehicle (EV)", value: v.is_electric ? "Yes" : "No" },
+                        { label: "Accessible Parking", value: v.needs_accessible_parking ? "Yes" : "No" }
+                    ],
+                    confirmText: "Got It"
+                });
+            }
             if (!vehicleId && data.vehicle?.vehicle_id) {
                 if (afterAddAction === "park") {
                     await showAvailableSlots(data.vehicle.vehicle_id);
@@ -155,6 +179,12 @@ if (vehicleForm) {
             }
         } catch (error) {
             setVehicleMessage(error.message, true);
+            await showAppNotice({
+                title: "Unable to Save Vehicle",
+                message: error.message,
+                type: "danger",
+                confirmText: "Close"
+            });
         }
     });
 }
@@ -209,7 +239,14 @@ if (vehicleList) {
             return;
         }
 
-        if (!window.confirm("Permanently delete this vehicle and its associated parking, reservation, payment, receipt, and history records? This cannot be undone.")) {
+        const confirmed = await showAppConfirm({
+            title: "Permanently Delete Vehicle?",
+            message: "Permanently delete this vehicle and its associated parking, reservation, payment, receipt, and history records? This cannot be undone.",
+            type: "danger",
+            confirmText: "Permanently Delete",
+            cancelText: "Cancel"
+        });
+        if (!confirmed) {
             return;
         }
         try {
@@ -222,9 +259,21 @@ if (vehicleList) {
                 throw new Error(data.error?.message || "The vehicle could not be deleted.");
             }
             setVehicleMessage("Vehicle deleted.");
+            await showAppNotice({
+                title: "Vehicle Deleted",
+                message: "The vehicle and its associated history records have been permanently removed.",
+                type: "info",
+                confirmText: "OK"
+            });
             await loadVehicles();
         } catch (error) {
             setVehicleMessage(error.message, true);
+            await showAppNotice({
+                title: "Unable to Delete Vehicle",
+                message: error.message,
+                type: "danger",
+                confirmText: "Close"
+            });
         }
     });
 
@@ -233,7 +282,7 @@ if (vehicleList) {
         if (!choice) {
             return;
         }
-        await parkVehicleInSlot(choice.dataset.vehicleId, choice.dataset.slotId);
+        await promptImmediateParking(choice.dataset.vehicleId, choice.dataset.slotId, choice.textContent);
     });
 }
 
@@ -302,7 +351,86 @@ async function showAvailableSlots(vehicleId) {
     }
 }
 
-async function parkVehicleInSlot(vehicleId, slotId) {
+function promptImmediateParking(vehicleId, slotId, slotLabel) {
+    const dialog = document.getElementById("immediateParkingDialog");
+    if (!dialog) {
+        return parkVehicleInSlot(vehicleId, slotId, 120);
+    }
+    const titleEl = document.getElementById("immediateParkingTitle");
+    const promptEl = document.getElementById("immediateParkingPrompt");
+    const durationSelect = document.getElementById("immediateParkingDuration");
+    const customGroup = document.getElementById("immediateCustomDurationGroup");
+    const customHoursInput = document.getElementById("immediateCustomHours");
+    const customMinutesInput = document.getElementById("immediateCustomMinutes");
+    const closeBtn = document.getElementById("closeImmediateParkingDialog");
+    const cancelBtn = document.getElementById("cancelImmediateParkingButton");
+    const form = document.getElementById("immediateParkingForm");
+
+    if (titleEl && slotLabel) {
+        titleEl.textContent = `Park Vehicle · ${slotLabel.trim()}`;
+    }
+    if (promptEl) {
+        promptEl.textContent = "How long do you plan to stay? (Durations under 1 hour are charged the 1-hour slot rate)";
+    }
+    if (durationSelect) {
+        durationSelect.value = "120";
+    }
+    if (customGroup) {
+        customGroup.style.display = "none";
+    }
+    if (customHoursInput) {
+        customHoursInput.value = "0";
+    }
+    if (customMinutesInput) {
+        customMinutesInput.value = "30";
+    }
+
+    const onDurationChange = () => {
+        if (customGroup) {
+            customGroup.style.display = durationSelect.value === "custom" ? "block" : "none";
+        }
+    };
+    durationSelect?.removeEventListener("change", onDurationChange);
+    durationSelect?.addEventListener("change", onDurationChange);
+
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            dialog.close();
+            form?.removeEventListener("submit", onSubmit);
+            closeBtn?.removeEventListener("click", onCancel);
+            cancelBtn?.removeEventListener("click", onCancel);
+        };
+        const onCancel = () => {
+            cleanup();
+            resolve(false);
+        };
+        const onSubmit = async (e) => {
+            e.preventDefault();
+            let totalMinutes = 120;
+            if (durationSelect && durationSelect.value === "custom") {
+                const hours = Math.max(0, Math.min(24, parseInt(customHoursInput?.value || "0", 10) || 0));
+                const mins = Math.max(0, Math.min(59, parseInt(customMinutesInput?.value || "0", 10) || 0));
+                totalMinutes = Math.max(1, Math.min(1440, (hours * 60) + mins));
+            } else if (durationSelect) {
+                totalMinutes = Math.max(1, Math.min(1440, parseInt(durationSelect.value, 10) || 120));
+            }
+            cleanup();
+            await parkVehicleInSlot(vehicleId, slotId, totalMinutes);
+            resolve(true);
+        };
+
+        form?.removeEventListener("submit", onSubmit);
+        form?.addEventListener("submit", onSubmit, { once: true });
+        closeBtn?.removeEventListener("click", onCancel);
+        closeBtn?.addEventListener("click", onCancel, { once: true });
+        cancelBtn?.removeEventListener("click", onCancel);
+        cancelBtn?.addEventListener("click", onCancel, { once: true });
+
+        dialog.showModal();
+    });
+}
+
+async function parkVehicleInSlot(vehicleId, slotId, durationMinutes = 120) {
     if (!parkingMap) return;
     const selectedElement = parkingMap.querySelector(
         `[data-slot-id="${CSS.escape(String(slotId))}"]`
@@ -316,7 +444,10 @@ async function parkVehicleInSlot(vehicleId, slotId) {
             {
                 method: "POST",
                 headers: { ...authHeaders(), "Content-Type": "application/json" },
-                body: JSON.stringify({ slot_id: Number(slotId) })
+                body: JSON.stringify({
+                    slot_id: Number(slotId),
+                    duration_minutes: Number(durationMinutes)
+                })
             }
         );
         const data = await response.json();
@@ -326,6 +457,20 @@ async function parkVehicleInSlot(vehicleId, slotId) {
         slotSelection = null;
         await loadVehicles();
         setVehicleMessage(`Vehicle parked at ${data.parking.area_name} · ${data.parking.slot_number}.`);
+        await showAppNotice({
+            title: "Vehicle Parked Successfully! 🚗",
+            message: `${data.parking.registration_number} is now checked in and parked at ${data.parking.area_name}, Slot ${data.parking.slot_number}.`,
+            type: "success",
+            subtitle: `Active Session #${data.parking.session_id}`,
+            details: [
+                { label: "Vehicle", value: data.parking.registration_number },
+                { label: "Parking Slot", value: `${data.parking.area_name} · Slot ${data.parking.slot_number}` },
+                { label: "Planned Duration", value: `${durationMinutes} minute(s)` },
+                { label: "Planned Exit Time", value: formatIsoTimestamp(data.parking.planned_end_time) },
+                { label: "Grace Period", value: "7 min free after planned exit, then ₹1/min" }
+            ],
+            confirmText: "View Parking Session"
+        });
         const parkingArea = areas.find((area) => String(area.area_id) === String(data.parking.area_id));
         if (parkingArea) {
             selectedArea = parkingArea;
@@ -345,6 +490,12 @@ async function parkVehicleInSlot(vehicleId, slotId) {
             selectedElement.removeAttribute("aria-disabled");
         }
         setVehicleMessage(error.message, true);
+        await showAppNotice({
+            title: "Unable to Park Vehicle",
+            message: error.message,
+            type: "danger",
+            confirmText: "Close"
+        });
     }
 }
 async function showVehicleExitModal(vehicleId) {
@@ -391,38 +542,54 @@ async function showVehicleExitModal(vehicleId) {
         timeRow.innerHTML = `<span class="muted">Entry Time</span><span>${formatIsoTimestamp(summary.entry_time)}</span>`;
         card.append(timeRow);
 
-        if (summary.reserved_end_time) {
+        const endTarget = summary.planned_end_time || summary.reserved_end_time;
+        if (endTarget) {
             const reservedRow = document.createElement("div");
             reservedRow.className = "fee-breakdown-row";
-            reservedRow.innerHTML = `<span class="muted">Reserved Until</span><span>${formatIsoTimestamp(summary.reserved_end_time)}</span>`;
+            reservedRow.innerHTML = `<span class="muted">Planned / Reserved Until</span><span>${formatIsoTimestamp(endTarget)}</span>`;
             card.append(reservedRow);
         }
 
         const durRow = document.createElement("div");
         durRow.className = "fee-breakdown-row";
-        durRow.innerHTML = `<span class="muted">Parking Duration</span><span>${summary.duration_minutes} min (billed as ${summary.billed_hours} hr)</span>`;
+        const bookedHours = Number(summary.booked_hours || summary.billed_hours || 1);
+        durRow.innerHTML = `<span class="muted">Parking Duration</span><span>${summary.duration_minutes || 0} min (billed full ${bookedHours} hr)</span>`;
         card.append(durRow);
 
         const baseFeeRow = document.createElement("div");
         baseFeeRow.className = "fee-breakdown-row";
-        baseFeeRow.innerHTML = `<span>Base Parking Fee (${summary.billed_hours}h × ₹${Number(summary.hourly_rate).toFixed(2)})</span><span>₹${Number(summary.base_fee).toFixed(2)}</span>`;
+        baseFeeRow.innerHTML = `<span>Base Slot Fee (${bookedHours}h × ₹${Number(summary.hourly_rate || 0).toFixed(2)})</span><span>₹${Number(summary.base_fee || 0).toFixed(2)}</span>`;
         card.append(baseFeeRow);
 
-        if (summary.overstay_duration_minutes > 0) {
-            const overstayWarning = document.createElement("div");
-            overstayWarning.className = "fee-overstay-warning";
-            overstayWarning.textContent = `⚠ Overstayed reserved time by ${summary.overstay_duration_minutes} min (billed as ${summary.billed_overstay_hours} hr @ ₹${Number(summary.overstay_rate).toFixed(2)}/hr)`;
-            card.append(overstayWarning);
+        const overstayMins = Number(summary.overstay_duration_minutes) || 0;
+        const billedOvertimeMins = Number(summary.billed_overtime_minutes != null ? summary.billed_overtime_minutes : summary.billed_overstay_minutes) || 0;
+        const overtimeRate = Number(summary.overtime_rate_per_minute) || 1.0;
+        const overtimeFee = Number(summary.overstay_fee) || 0.0;
 
-            const overstayFeeRow = document.createElement("div");
-            overstayFeeRow.className = "fee-breakdown-row";
-            overstayFeeRow.innerHTML = `<span>Overstay Charge</span><span>₹${Number(summary.overstay_fee).toFixed(2)}</span>`;
-            card.append(overstayFeeRow);
+        if (overstayMins > 0) {
+            const overstayWarning = document.createElement("div");
+            if (billedOvertimeMins > 0) {
+                overstayWarning.className = "fee-overstay-warning";
+                overstayWarning.textContent = `⚠ Overstayed planned time by ${overstayMins} min (7 min free grace + ${billedOvertimeMins} billable min @ ₹${overtimeRate.toFixed(2)}/min)`;
+                card.append(overstayWarning);
+
+                const overstayFeeRow = document.createElement("div");
+                overstayFeeRow.className = "fee-breakdown-row";
+                overstayFeeRow.innerHTML = `<span>Overtime Fee (${billedOvertimeMins} min × ₹${overtimeRate.toFixed(2)}/min)</span><span>₹${overtimeFee.toFixed(2)}</span>`;
+                card.append(overstayFeeRow);
+            } else {
+                overstayWarning.className = "fee-overstay-warning";
+                overstayWarning.style.background = "var(--surface-subtle, #EAF6DD)";
+                overstayWarning.style.color = "var(--color-primary, #064734)";
+                overstayWarning.style.border = "1px solid var(--border-color, #D5E8C9)";
+                overstayWarning.textContent = `ℹ Overstayed planned time by ${overstayMins} min (within 7-minute free grace period — ₹0 overtime)`;
+                card.append(overstayWarning);
+            }
         }
 
         const totalRow = document.createElement("div");
         totalRow.className = "fee-breakdown-row total";
-        totalRow.innerHTML = `<span>Total Fee to Pay</span><span>₹${Number(summary.total_fee).toFixed(2)}</span>`;
+        totalRow.innerHTML = `<span>Total Fee to Pay</span><span>₹${Number(summary.total_fee || 0).toFixed(2)}</span>`;
         card.append(totalRow);
 
         exitModalBody.append(card);
@@ -478,6 +645,21 @@ async function showVehicleExitModal(vehicleId) {
                 const finalFee = checkoutData.session ? ` Total fee: ₹${Number(checkoutData.session.total_fee).toFixed(2)}.` : "";
                 setVehicleMessage(`Vehicle ${summary.registration_number} checked out successfully! Slot ${summary.slot_number} released.${finalFee}`);
 
+                const sess = checkoutData.session;
+                await showAppNotice({
+                    title: "Check Out Complete! 🏁",
+                    message: `Vehicle ${summary.registration_number} checked out successfully! Slot ${summary.slot_number} released.`,
+                    type: "success",
+                    subtitle: sess ? `Session #${sess.session_id}` : "",
+                    details: [
+                        { label: "Vehicle", value: summary.registration_number },
+                        { label: "Slot Released", value: summary.slot_number },
+                        { label: "Total Billed Fee", value: sess ? `₹${Number(sess.total_fee).toFixed(2)}` : "N/A" },
+                        { label: "Payment Status", value: sess ? (sess.payment_status || "paid").replace(/_/g, " ").toUpperCase() : "PAID" }
+                    ],
+                    confirmText: "Done"
+                });
+
                 await loadVehicles();
                 if (typeof loadActiveParkingSessions === "function") {
                     await loadActiveParkingSessions();
@@ -498,7 +680,11 @@ async function showVehicleExitModal(vehicleId) {
             } catch (err) {
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = "Confirm Exit & Release Slot";
-                alert(err.message);
+                await showAppNotice({
+                    title: "Check Out Failed",
+                    message: err.message,
+                    type: "danger"
+                });
             }
         });
 

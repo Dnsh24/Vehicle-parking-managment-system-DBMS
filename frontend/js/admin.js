@@ -64,6 +64,9 @@ function setAdminMessage(element, message, isError = false) {
     if (!element) return;
     element.textContent = message;
     element.classList.toggle("is-error", isError);
+    if (message && typeof showToast === "function") {
+        showToast(message, isError ? "error" : "success");
+    }
     if (message) {
         setTimeout(() => {
             if (element.textContent === message) {
@@ -171,6 +174,10 @@ async function loadAdminUsers() {
                                     data-user-id="${u.user_id}" data-active="${u.is_active}">
                                     ${u.is_active ? 'Deactivate' : 'Activate'}
                                 </button>
+                                <button type="button" class="danger admin-user-delete-btn"
+                                    data-user-id="${u.user_id}" data-username="${escapeHtml(u.username)}">
+                                    Delete
+                                </button>
                             `}
                         </div>
                     </td>
@@ -200,6 +207,46 @@ if (adminUsersList) {
     });
 
     adminUsersList.addEventListener("click", async (event) => {
+        const delBtn = event.target.closest(".admin-user-delete-btn");
+        if (delBtn) {
+            const userId = delBtn.dataset.userId;
+            const username = delBtn.dataset.username || `#${userId}`;
+            const dialog = document.getElementById("adminDeleteUserDialog");
+            const promptEl = document.getElementById("adminDeleteUserPrompt");
+            const confirmBtn = document.getElementById("confirmAdminDeleteUserButton");
+            const cancelBtn = document.getElementById("cancelAdminDeleteUserButton");
+            const closeBtn = document.getElementById("closeAdminDeleteUserDialog");
+
+            if (!dialog) return;
+            if (promptEl) {
+                promptEl.textContent = `Are you sure you want to permanently delete account "${username}" (#${userId})?`;
+            }
+
+            const cleanup = () => {
+                dialog.close();
+                confirmBtn?.removeEventListener("click", onConfirm);
+                cancelBtn?.removeEventListener("click", onCancel);
+                closeBtn?.removeEventListener("click", onCancel);
+            };
+            const onCancel = () => cleanup();
+            const onConfirm = async () => {
+                cleanup();
+                try {
+                    await adminApiCall(`/api/admin/users/${encodeURIComponent(userId)}`, "DELETE");
+                    setAdminMessage(adminUsersMessage, `Account #${userId} and history permanently deleted.`);
+                    await loadAdminUsers();
+                } catch (error) {
+                    setAdminMessage(adminUsersMessage, error.message, true);
+                }
+            };
+
+            confirmBtn?.addEventListener("click", onConfirm, { once: true });
+            cancelBtn?.addEventListener("click", onCancel, { once: true });
+            closeBtn?.addEventListener("click", onCancel, { once: true });
+            dialog.showModal();
+            return;
+        }
+
         const button = event.target.closest(".admin-user-status-btn");
         if (!button) return;
         const userId = button.dataset.userId;
@@ -318,7 +365,13 @@ if (adminAreasListEl) {
         const deleteBtn = event.target.closest(".admin-delete-area-btn");
         if (deleteBtn) {
             const areaId = deleteBtn.dataset.areaId;
-            if (!confirm(`Are you sure you want to delete parking area #${areaId}?`)) return;
+            const confirmed = await showAppConfirm({
+                title: "Delete Parking Area?",
+                message: `Are you sure you want to delete parking area #${areaId}? All associated slots will also be affected.`,
+                type: "danger",
+                confirmText: "Delete Area"
+            });
+            if (!confirmed) return;
             try {
                 await adminApiCall(`/api/admin/parking-areas/${encodeURIComponent(areaId)}`, "DELETE");
                 setAdminMessage(adminAreasMessage, `Parking area #${areaId} deleted.`);
@@ -465,7 +518,13 @@ if (adminSlotsListEl) {
         const deleteBtn = event.target.closest(".admin-delete-slot-btn");
         if (deleteBtn) {
             const slotId = deleteBtn.dataset.slotId;
-            if (!confirm(`Are you sure you want to delete slot #${slotId}?`)) return;
+            const confirmed = await showAppConfirm({
+                title: "Delete Slot?",
+                message: `Are you sure you want to delete slot #${slotId}?`,
+                type: "danger",
+                confirmText: "Delete Slot"
+            });
+            if (!confirmed) return;
             try {
                 await adminApiCall(`/api/admin/parking-slots/${encodeURIComponent(slotId)}`, "DELETE");
                 setAdminMessage(adminSlotsMessage, `Slot #${slotId} deleted.`);
@@ -594,7 +653,13 @@ if (adminRatesListEl) {
         const deleteBtn = event.target.closest(".admin-delete-rate-btn");
         if (deleteBtn) {
             const rateId = deleteBtn.dataset.rateId;
-            if (!confirm(`Are you sure you want to delete rate #${rateId}?`)) return;
+            const confirmed = await showAppConfirm({
+                title: "Delete Rate Rule?",
+                message: `Are you sure you want to delete rate rule #${rateId}?`,
+                type: "danger",
+                confirmText: "Delete Rate"
+            });
+            if (!confirmed) return;
             try {
                 await adminApiCall(`/api/admin/parking-rates/${encodeURIComponent(rateId)}`, "DELETE");
                 setAdminMessage(adminRatesMessage, `Parking rate #${rateId} deleted.`);
@@ -728,7 +793,13 @@ if (adminMaintenanceListEl) {
         const deleteBtn = event.target.closest(".admin-delete-maint-btn");
         if (deleteBtn) {
             const maintId = deleteBtn.dataset.maintId;
-            if (!confirm(`Are you sure you want to delete maintenance record #${maintId}?`)) return;
+            const confirmed = await showAppConfirm({
+                title: "Delete Maintenance Record?",
+                message: `Are you sure you want to delete maintenance record #${maintId}?`,
+                type: "danger",
+                confirmText: "Delete Record"
+            });
+            if (!confirmed) return;
             try {
                 await adminApiCall(`/api/admin/maintenance/${encodeURIComponent(maintId)}`, "DELETE");
                 setAdminMessage(adminMaintenanceMessage, `Maintenance #${maintId} removed.`);

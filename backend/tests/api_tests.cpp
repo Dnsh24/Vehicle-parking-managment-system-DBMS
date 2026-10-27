@@ -83,6 +83,8 @@ int main()
     assert(summary_str.find("\"total_fee\":140") != std::string::npos);
     assert(summary_str.find("\"payment_status\":\"paid_manually\"") != std::string::npos);
     assert(summary_str.find("\"status\":\"overstayed\"") != std::string::npos);
+    assert(summary_str.find("\"grace_period_minutes\":7") != std::string::npos);
+    assert(summary_str.find("\"overtime_rate_per_minute\":1") != std::string::npos);
 
     return 0;
 }

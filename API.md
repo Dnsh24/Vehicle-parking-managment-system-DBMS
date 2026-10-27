@@ -112,8 +112,10 @@ slots. A vehicle that is already parked returns `409 VEHICLE_ALREADY_PARKED`.
 ### `POST /api/vehicles/{vehicle_id}/park`
 
 Assigns the owner's vehicle to an available compatible slot. The JSON body
-requires a positive `slot_id`. The operation atomically marks the slot
-occupied and records the active assignment. EV charging slots require the
+requires a positive `slot_id`. It optionally accepts a planned stay duration:
+`duration_hours` (integer, 1 to 24, default 2) or `duration_minutes` (integer, 60 to 1440).
+The operation atomically calculates `planned_end_time = CURRENT_TIMESTAMP + duration`,
+marks the slot occupied, and records the active assignment. EV charging slots require the
 vehicle to be marked electric. Handicapped slots require
 `needs_accessible_parking` to be true for the vehicle. A slot that is no longer
 available, is inactive, or is incompatible returns `409
@@ -204,16 +206,20 @@ RESERVATION_NOT_FOUND`.
 
 Checks in the authenticated owner's confirmed reservation and atomically
 creates an active parking session, records the entry time, marks the
-reservation active, and marks the slot occupied. Check-in is available from
-the reservation start time up to (but not including) its end time. Slots or
-areas that are unavailable, or slots with maintenance overlapping the
-remaining reservation time, cannot be checked into.
+reservation active, and marks the slot occupied. Check-in is available starting
+from the reservation start time and includes a 5-minute late check-in grace period
+(`start_time + interval '5 minutes'`). If check-in is attempted more than 5 minutes
+after the scheduled start time, the reservation is automatically cancelled, the slot
+is released, an in-app cancellation notification is generated, and the endpoint returns
+`409 CHECK_IN_GRACE_PERIOD_EXCEEDED`. Slots or areas that are unavailable, or slots with
+maintenance overlapping the remaining reservation time, cannot be checked into.
 
 Returns `201 Created` with a `session` containing the session, vehicle, slot,
 area, entry time, and reservation end time. Unknown or unowned reservations
-return `404 RESERVATION_NOT_FOUND`. Check-in before the reservation begins,
-after it ends, for a non-confirmed reservation, or when the vehicle/slot is
-unavailable returns `409` with a specific error code.
+return `404 RESERVATION_NOT_FOUND`. Check-in before the reservation begins returns
+`409 CHECK_IN_NOT_OPEN`. Check-in more than 5 minutes late returns
+`409 CHECK_IN_GRACE_PERIOD_EXCEEDED`. Check-in for a non-confirmed reservation or when
+the vehicle/slot is unavailable returns `409` with a specific error code.
 
 ### `GET /api/parking-sessions/active`
 
@@ -253,6 +259,16 @@ user.
 
 Marks all of the authenticated user's notifications as read and returns
 `updated_count` and an `unread_count` of zero.
+
+### Fee Calculation & Overtime Policy
+
+All parking fee summaries (`/api/vehicles/{id}/fee-summary`, `/api/parking-sessions/{id}/fee-summary`),
+checkouts (`/api/vehicles/{id}/checkout`, `/api/parking-sessions/{id}/checkout`), and payment records
+follow these shared rules:
+1. **Booked Slot Duration**: The booked or planned duration is rounded up to whole hours and charged at the slot's configured hourly rate. The full booked duration is charged even if the user checks out early.
+2. **7-Minute Free Grace Period**: After the planned or reserved end time, a 7-minute free grace period is provided.
+3. **Overtime Rate**: Overtime past the 7-minute grace period is charged at **₹1 per started overtime minute**, independent of the slot's hourly rate. Any partial minute past grace counts as one started minute (e.g. 30 minutes overtime = 7 free min + 23 billable min = ₹23).
+4. **Serialization**: Responses return `planned_end_time`, `duration_minutes`, `booked_hours`, `billed_hours`, `overstay_duration_minutes`, `grace_period_minutes`, `billed_overstay_minutes`, `billed_overtime_minutes`, `hourly_rate`, `overtime_rate_per_minute`, `base_fee`, `overstay_fee`, and `total_fee`.
 
 ### `GET /api/parking-sessions/{session_id}/fee-summary`
 
@@ -452,6 +468,14 @@ from changing their own role (`400 CANNOT_MODIFY_OWN_ADMIN_ACCESS`).
 
 Updates a user's `is_active` status. Inactive accounts cannot log in. Administrators
 are prevented from deactivating their own account (`400 CANNOT_MODIFY_OWN_ADMIN_ACCESS`).
+
+### `DELETE /api/admin/users/{user_id}`
+
+Permanently deletes a user account and associated history.
+- Administrators cannot delete their own account (`400 CANNOT_MODIFY_OWN_ADMIN_ACCESS`).
+- If the account has active parking assignments or active/overstayed parking sessions, deletion is blocked (`409 CANNOT_DELETE_ACTIVE_PARKING_USER`).
+- If the account has upcoming or active reservations (`end_time > CURRENT_TIMESTAMP`), deletion is blocked (`409 CANNOT_DELETE_RESERVED_USER`).
+- When only past parking and reservation history exists, all associated records (`payments`, `parking_sessions`, `reservations`, `parking_assignments`, `vehicles`, `notifications`, `auth_sessions`, `users`) are deleted within a single database transaction.
 
 ### `GET /api/admin/parking-areas`
 

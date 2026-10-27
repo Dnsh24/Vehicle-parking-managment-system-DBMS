@@ -26,9 +26,13 @@ let historyPageOffset = 0;
 let notificationPageOffset = 0;
 
 function setReservationMessage(message, isError = false) {
-    if (!reservationMessage) return;
-    reservationMessage.textContent = message;
-    reservationMessage.classList.toggle("is-error", isError);
+    if (reservationMessage) {
+        reservationMessage.textContent = message;
+        reservationMessage.classList.toggle("is-error", isError);
+    }
+    if (message && typeof showToast === "function") {
+        showToast(message, isError ? "error" : "success");
+    }
 }
 
 function setReservationDateDefaults() {
@@ -539,11 +543,32 @@ if (reservationResults) {
             if (!response.ok || !data.reservation) {
                 throw new Error(data.error?.message || "The reservation could not be created.");
             }
-            setReservationMessage(`Reservation #${data.reservation.reservation_id} confirmed for ${data.reservation.slot_number}.`);
+            const r = data.reservation;
+            setReservationMessage(`Reservation #${r.reservation_id} confirmed for ${r.slot_number}.`);
+            await showAppNotice({
+                title: "Reservation Confirmed! 🎫",
+                message: `Your parking slot has been successfully reserved at ${r.area_name}.`,
+                type: "success",
+                subtitle: `Reservation #${r.reservation_id}`,
+                details: [
+                    { label: "Parking Slot", value: `${r.area_name} · Slot ${r.slot_number}` },
+                    { label: "Reserved From", value: formatIsoTimestamp(r.start_time) },
+                    { label: "Reserved Until", value: formatIsoTimestamp(r.end_time) },
+                    { label: "Check-In Window", value: "Start time + 5 min grace (auto-cancelled if >5 min late)" },
+                    { label: "Overtime Policy", value: "7 min grace after end time, then ₹1/min" }
+                ],
+                confirmText: "Got It"
+            });
             await Promise.all([loadReservations(), loadNotifications()]);
             reservationSearchForm.requestSubmit();
         } catch (error) {
             setReservationMessage(error.message, true);
+            await showAppNotice({
+                title: "Reservation Failed",
+                message: error.message,
+                type: "danger",
+                confirmText: "Close"
+            });
         }
     });
 }
@@ -562,11 +587,28 @@ if (reservationList) {
                 });
                 const data = await response.json();
                 if (!response.ok || !data.session) {
-                    throw new Error(data.error?.message || "The reservation could not be checked in.");
+                    const err = new Error(data.error?.message || "The reservation could not be checked in.");
+                    err.code = data.error?.code;
+                    throw err;
                 }
+                const sess = data.session;
                 setReservationMessage(
-                    `Checked in successfully. ${data.session.registration_number} is parked at ${data.session.area_name}, ${data.session.slot_number}.`
+                    `Checked in successfully. ${sess.registration_number} is parked at ${sess.area_name}, ${sess.slot_number}.`
                 );
+                await showAppNotice({
+                    title: "Checked In Successfully! 🎉",
+                    message: `${sess.registration_number} is now officially checked in at ${sess.area_name}, Slot ${sess.slot_number}.`,
+                    type: "success",
+                    subtitle: `Active Session #${sess.session_id}`,
+                    details: [
+                        { label: "Vehicle", value: sess.registration_number },
+                        { label: "Parking Slot", value: `${sess.area_name} · Slot ${sess.slot_number}` },
+                        { label: "Check-In Time", value: formatIsoTimestamp(sess.entry_time) },
+                        { label: "Reserved End Time", value: formatIsoTimestamp(sess.reserved_end_time) },
+                        { label: "Overtime Rule", value: "7 min free grace period, then ₹1/min" }
+                    ],
+                    confirmText: "Proceed"
+                });
                 await Promise.all([loadReservations(), loadActiveParkingSessions(), loadNotifications()]);
                 return;
             }
@@ -585,22 +627,95 @@ if (reservationList) {
                 setReservationMessage(
                     `Reservation #${reservation.reservation_id}: ${reservation.area_name}, ${reservation.slot_number}; ${reservation.status}; ${rate}.`
                 );
+                await showAppNotice({
+                    title: `Reservation #${reservation.reservation_id}`,
+                    message: `Status: ${reservation.status.toUpperCase()}`,
+                    type: "info",
+                    details: [
+                        { label: "Location", value: `${reservation.area_name} · Slot ${reservation.slot_number}` },
+                        { label: "Start Time", value: formatIsoTimestamp(reservation.start_time) },
+                        { label: "End Time", value: formatIsoTimestamp(reservation.end_time) },
+                        { label: "Rate", value: rate }
+                    ],
+                    confirmText: "Close"
+                });
                 return;
             }
-            const response = await fetch(`${API_BASE}/api/reservations/${reservationId}`, {
-                method: "DELETE",
-                headers: authHeaders()
-            });
-            const data = response.status === 204 ? {} : await response.json();
-            if (!response.ok) {
-                throw new Error(data.error?.message || "The reservation could not be cancelled.");
+            if (button.dataset.action === "cancel") {
+                const confirmed = await showAppConfirm({
+                    title: "Cancel Reservation?",
+                    message: `Are you sure you want to cancel Reservation #${reservationId}? The slot will be released for other drivers.`,
+                    type: "warning",
+                    confirmText: "Yes, Cancel Reservation",
+                    cancelText: "Keep Reservation"
+                });
+                if (!confirmed) return;
+
+                const response = await fetch(`${API_BASE}/api/reservations/${reservationId}`, {
+                    method: "DELETE",
+                    headers: authHeaders()
+                });
+                const data = response.status === 204 ? {} : await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error?.message || "The reservation could not be cancelled.");
+                }
+                setReservationMessage(`Reservation #${reservationId} cancelled.`);
+                await showAppNotice({
+                    title: "Reservation Cancelled",
+                    message: `Reservation #${reservationId} has been cancelled successfully.`,
+                    type: "info",
+                    confirmText: "OK"
+                });
+                await Promise.all([loadReservations(), loadParkingHistory(), loadNotifications()]);
+                reservationSearchForm.requestSubmit();
             }
-            setReservationMessage(`Reservation #${reservationId} cancelled.`);
-            await Promise.all([loadReservations(), loadParkingHistory(), loadNotifications()]);
-            reservationSearchForm.requestSubmit();
         } catch (error) {
             if (button.dataset.action === "check-in") {
                 button.disabled = false;
+                let noticeTitle = "Check-In Not Available";
+                let noticeType = "warning";
+                let causeExplanation = error.message;
+
+                if (error.code === "CHECK_IN_NOT_OPEN") {
+                    noticeTitle = "Check-In Not Started Yet ⏰";
+                    noticeType = "warning";
+                    causeExplanation = "Your reservation start time has not arrived yet. Check-in opens exactly at the scheduled start time. You will have a 5-minute grace period after start time to check in.";
+                } else if (error.code === "CHECK_IN_GRACE_PERIOD_EXCEEDED") {
+                    noticeTitle = "Reservation Cancelled ⏰";
+                    noticeType = "danger";
+                    causeExplanation = "You checked in more than 5 minutes past your reservation start time. The 5-minute check-in grace period has expired, and your reservation has been cancelled. The parking slot has been released for other vehicles.";
+                    await Promise.all([loadReservations(), loadNotifications()]);
+                } else if (error.code === "RESERVATION_EXPIRED") {
+                    noticeTitle = "Reservation Expired ⏳";
+                    noticeType = "danger";
+                    causeExplanation = "The scheduled end time for this reservation has already passed. The reservation has expired and the parking slot has been released.";
+                    await Promise.all([loadReservations(), loadNotifications()]);
+                } else if (error.code === "RESERVATION_NOT_CHECK_IN_ELIGIBLE") {
+                    noticeTitle = "Reservation Ineligible for Check-In";
+                    noticeType = "warning";
+                    causeExplanation = "Only confirmed reservations can be checked in.";
+                } else if (error.code === "PARKING_SLOT_UNAVAILABLE") {
+                    noticeTitle = "Slot Unavailable";
+                    noticeType = "danger";
+                    causeExplanation = "The reserved parking slot is currently unavailable or undergoing maintenance.";
+                } else if (error.code === "VEHICLE_ALREADY_PARKED") {
+                    noticeTitle = "Vehicle Already Parked";
+                    noticeType = "warning";
+                    causeExplanation = "This vehicle is already checked in to another active parking session.";
+                }
+
+                await showAppNotice({
+                    title: noticeTitle,
+                    message: causeExplanation,
+                    type: noticeType,
+                    confirmText: "Understood"
+                });
+            } else {
+                await showAppNotice({
+                    title: "Notice",
+                    message: error.message,
+                    type: "danger"
+                });
             }
             setReservationMessage(error.message, true);
         }
@@ -775,29 +890,44 @@ async function showSessionExitModal(sessionId, isCheckoutMode) {
 
         const durRow = document.createElement("div");
         durRow.className = "fee-breakdown-row";
-        durRow.innerHTML = `<span class="muted">Parking Duration</span><span>${summary.duration_minutes} min (billed as ${summary.billed_hours} hr)</span>`;
+        const bookedHours = Number(summary.booked_hours || summary.billed_hours || 1);
+        durRow.innerHTML = `<span class="muted">Parking Duration</span><span>${summary.duration_minutes || 0} min (billed full ${bookedHours} hr)</span>`;
         card.append(durRow);
 
         const baseFeeRow = document.createElement("div");
         baseFeeRow.className = "fee-breakdown-row";
-        baseFeeRow.innerHTML = `<span>Base Parking Fee (${summary.billed_hours}h × ₹${summary.hourly_rate.toFixed(2)})</span><span>₹${summary.base_fee.toFixed(2)}</span>`;
+        baseFeeRow.innerHTML = `<span>Base Slot Fee (${bookedHours}h × ₹${Number(summary.hourly_rate || 0).toFixed(2)})</span><span>₹${Number(summary.base_fee || 0).toFixed(2)}</span>`;
         card.append(baseFeeRow);
 
-        if (summary.overstay_duration_minutes > 0) {
-            const overstayWarning = document.createElement("div");
-            overstayWarning.className = "fee-overstay-warning";
-            overstayWarning.textContent = `⚠ Overstayed reserved time by ${summary.overstay_duration_minutes} min (billed as ${summary.billed_overstay_hours} hr @ ₹${summary.overstay_rate.toFixed(2)}/hr)`;
-            card.append(overstayWarning);
+        const overstayMins = Number(summary.overstay_duration_minutes) || 0;
+        const billedOvertimeMins = Number(summary.billed_overtime_minutes != null ? summary.billed_overtime_minutes : summary.billed_overstay_minutes) || 0;
+        const overtimeRate = Number(summary.overtime_rate_per_minute) || 1.0;
+        const overtimeFee = Number(summary.overstay_fee) || 0.0;
 
-            const overstayFeeRow = document.createElement("div");
-            overstayFeeRow.className = "fee-breakdown-row";
-            overstayFeeRow.innerHTML = `<span>Overstay Charge</span><span>₹${summary.overstay_fee.toFixed(2)}</span>`;
-            card.append(overstayFeeRow);
+        if (overstayMins > 0) {
+            const overstayWarning = document.createElement("div");
+            if (billedOvertimeMins > 0) {
+                overstayWarning.className = "fee-overstay-warning";
+                overstayWarning.textContent = `⚠ Overstayed reserved time by ${overstayMins} min (7 min free grace + ${billedOvertimeMins} billable min @ ₹${overtimeRate.toFixed(2)}/min)`;
+                card.append(overstayWarning);
+
+                const overstayFeeRow = document.createElement("div");
+                overstayFeeRow.className = "fee-breakdown-row";
+                overstayFeeRow.innerHTML = `<span>Overtime Fee (${billedOvertimeMins} min × ₹${overtimeRate.toFixed(2)}/min)</span><span>₹${overtimeFee.toFixed(2)}</span>`;
+                card.append(overstayFeeRow);
+            } else {
+                overstayWarning.className = "fee-overstay-warning";
+                overstayWarning.style.background = "var(--surface-subtle, #EAF6DD)";
+                overstayWarning.style.color = "var(--color-primary, #064734)";
+                overstayWarning.style.border = "1px solid var(--border-color, #D5E8C9)";
+                overstayWarning.textContent = `ℹ Overstayed reserved time by ${overstayMins} min (within 7-minute free grace period — ₹0 overtime)`;
+                card.append(overstayWarning);
+            }
         }
 
         const totalRow = document.createElement("div");
         totalRow.className = "fee-breakdown-row total";
-        totalRow.innerHTML = `<span>Total Fee</span><span>₹${summary.total_fee.toFixed(2)}</span>`;
+        totalRow.innerHTML = `<span>Total Fee</span><span>₹${Number(summary.total_fee || 0).toFixed(2)}</span>`;
         card.append(totalRow);
 
         exitModalBody.append(card);
@@ -850,9 +980,24 @@ async function showSessionExitModal(sessionId, isCheckoutMode) {
                         throw new Error(exitData.error?.message || "Failed to process vehicle exit.");
                     }
                     sessionExitDialog.close();
+                    const s = exitData.session;
                     setReservationMessage(
-                        `Vehicle ${exitData.session.registration_number} checked out successfully! Slot ${exitData.session.slot_number} has been released. Total fee: ₹${exitData.session.total_fee.toFixed(2)} (${exitData.session.payment_status}).`
+                        `Vehicle ${s.registration_number} checked out successfully! Slot ${s.slot_number} has been released. Total fee: ₹${Number(s.total_fee).toFixed(2)} (${s.payment_status}).`
                     );
+                    await showAppNotice({
+                        title: "Check Out Complete! 🏁",
+                        message: `Vehicle ${s.registration_number} checked out successfully and slot ${s.slot_number} has been released.`,
+                        type: "success",
+                        subtitle: `Session #${s.session_id}`,
+                        details: [
+                            { label: "Vehicle", value: s.registration_number },
+                            { label: "Slot Released", value: `${s.area_name || ""} · ${s.slot_number}` },
+                            { label: "Duration", value: formatDuration((s.duration_minutes || 0) * 60) },
+                            { label: "Total Billed Fee", value: `₹${Number(s.total_fee).toFixed(2)}` },
+                            { label: "Payment Status", value: (s.payment_status || "paid").replace(/_/g, " ").toUpperCase() }
+                        ],
+                        confirmText: "Done"
+                    });
                     await Promise.all([
                         loadReservations(),
                         loadActiveParkingSessions(),
@@ -865,7 +1010,11 @@ async function showSessionExitModal(sessionId, isCheckoutMode) {
                 } catch (err) {
                     confirmBtn.disabled = false;
                     confirmBtn.textContent = "Confirm Exit & Release Slot";
-                    alert(err.message);
+                    await showAppNotice({
+                        title: "Exit Processing Failed",
+                        message: err.message,
+                        type: "danger"
+                    });
                 }
             });
 

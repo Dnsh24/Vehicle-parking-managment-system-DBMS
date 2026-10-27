@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Parking Management System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
@@ -64,8 +67,8 @@
         <h1 id="loginHeading">Log In</h1>
         <p class="auth-description" id="loginDescription">Please enter your credentials to access<br />your dashboard.</p>
         <form id="loginForm" class="auth-form">
-          <label class="auth-input"><span aria-hidden="true">♙</span><input name="email" id="loginEmailInput" type="text" placeholder="Username or Email" autocomplete="username" required /></label>
-          <label class="auth-input"><span aria-hidden="true">♙</span><input name="password" id="loginPasswordInput" type="password" placeholder="Password" autocomplete="current-password" required /><button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button></label>
+          <label class="auth-input"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input name="email" id="loginEmailInput" type="text" placeholder="Username or Email" autocomplete="username" required /></label>
+          <label class="auth-input"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><input name="password" id="loginPasswordInput" type="password" placeholder="Password" autocomplete="current-password" required /><button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password">Show</button></label>
           <div class="auth-options"><button class="forgot-password" id="forgotPasswordButton" type="button">Forgot Password?</button><label class="remember-option"><input name="remember_me" type="checkbox" /> Remember me</label></div>
           <button class="auth-submit" id="loginSubmitButton" type="submit">Log In</button>
         </form>
@@ -76,10 +79,10 @@
         <h1>Register</h1>
         <p class="auth-description">Create your account to access<br />your parking dashboard.</p>
         <form id="registerForm" class="auth-form">
-          <label class="auth-input"><span aria-hidden="true">♙</span><input name="username" type="text" placeholder="Username" maxlength="50" autocomplete="username" required /></label>
-          <label class="auth-input"><span aria-hidden="true">@</span><input name="email" type="email" placeholder="Email" autocomplete="email" required /></label>
-          <label class="auth-input"><span aria-hidden="true">♙</span><input name="password" type="password" placeholder="Password" minlength="8" autocomplete="new-password" required /><button class="password-toggle" type="button" data-password-toggle="registerPassword" aria-label="Show password">Show</button></label>
-          <label class="auth-input"><span aria-hidden="true">☎</span><input name="phone" type="tel" placeholder="Phone (Optional)" maxlength="20" autocomplete="tel" /></label>
+          <label class="auth-input"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><input name="username" type="text" placeholder="Username" maxlength="50" autocomplete="username" required /></label>
+          <label class="auth-input"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><input name="email" type="email" placeholder="Email" autocomplete="email" required /></label>
+          <label class="auth-input"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><input name="password" type="password" placeholder="Password" minlength="8" autocomplete="new-password" required /><button class="password-toggle" type="button" data-password-toggle="registerPassword" aria-label="Show password">Show</button></label>
+          <label class="auth-input"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg><input name="phone" type="tel" placeholder="Phone (Optional)" maxlength="20" autocomplete="tel" /></label>
           <button class="refresh-button" type="submit">Create account</button>
         </form>
         <button class="auth-switch" id="loginSwitch" type="button">Already have an account? Sign in</button>
@@ -649,6 +652,84 @@
       </section>
     </main>
 
+    <dialog id="immediateParkingDialog" class="exit-modal">
+      <div class="exit-modal-content">
+        <div class="exit-modal-header">
+          <h3 id="immediateParkingTitle">Park Vehicle</h3>
+          <button type="button" id="closeImmediateParkingDialog" class="exit-modal-close" aria-label="Close">✕</button>
+        </div>
+        <form id="immediateParkingForm" class="exit-modal-body">
+          <p id="immediateParkingPrompt" class="muted">Select your planned parking duration.</p>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="immediateParkingDuration" style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Planned Stay Duration</label>
+            <select id="immediateParkingDuration" class="field" style="width: 100%; padding: 0.6rem; border-radius: 8px;">
+              <option value="15">15 minutes (Quick Stop)</option>
+              <option value="30">30 minutes</option>
+              <option value="45">45 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="120" selected>2 hours (Recommended)</option>
+              <option value="180">3 hours</option>
+              <option value="240">4 hours</option>
+              <option value="360">6 hours</option>
+              <option value="480">8 hours</option>
+              <option value="720">12 hours</option>
+              <option value="1440">24 hours (1 day)</option>
+              <option value="custom">Custom duration...</option>
+            </select>
+          </div>
+          <div class="form-group" id="immediateCustomDurationGroup" style="display: none; margin-bottom: 1rem;">
+            <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Custom Stay Time</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div>
+                <label for="immediateCustomHours" style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Hours (0 - 24)</label>
+                <input type="number" id="immediateCustomHours" min="0" max="24" value="0" class="field" style="width: 100%; padding: 0.5rem; border-radius: 8px;">
+              </div>
+              <div>
+                <label for="immediateCustomMinutes" style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Minutes (0 - 59)</label>
+                <input type="number" id="immediateCustomMinutes" min="0" max="59" value="30" class="field" style="width: 100%; padding: 0.5rem; border-radius: 8px;">
+              </div>
+            </div>
+            <p class="muted" style="font-size: 0.8rem; margin-top: 0.5rem;">
+              Any duration under 1 hour is rounded to the 1-hour slot rate.
+            </p>
+          </div>
+          <div class="fee-breakdown-card" style="margin-bottom: 1.25rem;">
+            <div class="fee-breakdown-row">
+              <span class="muted">Booked Time Rule</span>
+              <span>Rounded up to whole hours (min 1 hr); charged in full</span>
+            </div>
+            <div class="fee-breakdown-row">
+              <span class="muted">Overtime Policy</span>
+              <span>7 min free grace period, then ₹1/started min</span>
+            </div>
+          </div>
+          <div class="exit-modal-actions">
+            <button type="button" id="cancelImmediateParkingButton" class="vehicle-cancel">Cancel</button>
+            <button type="submit" id="confirmImmediateParkingButton" class="primary">Confirm &amp; Park</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="adminDeleteUserDialog" class="exit-modal">
+      <div class="exit-modal-content">
+        <div class="exit-modal-header">
+          <h3>Delete User Account</h3>
+          <button type="button" id="closeAdminDeleteUserDialog" class="exit-modal-close" aria-label="Close">✕</button>
+        </div>
+        <div class="exit-modal-body">
+          <p id="adminDeleteUserPrompt">Are you sure you want to permanently delete this user account?</p>
+          <p class="muted" style="font-size: 0.85rem; margin-top: 0.5rem;">
+            Permanent deletion is only allowed if the user has no active parking sessions or future reservations. Associated past records will be permanently removed.
+          </p>
+          <div class="exit-modal-actions" style="margin-top: 1.25rem;">
+            <button type="button" id="cancelAdminDeleteUserButton" class="vehicle-cancel">Cancel</button>
+            <button type="button" id="confirmAdminDeleteUserButton" class="danger">Permanently Delete</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="sessionExitDialog" class="exit-modal">
       <div class="exit-modal-content">
         <div class="exit-modal-header">
@@ -660,6 +741,31 @@
         </div>
       </div>
     </dialog>
+
+    <!-- In-App Notification / Dialog Modal -->
+    <dialog id="appNoticeDialog" class="exit-modal app-notice-modal">
+      <div class="exit-modal-content app-notice-content">
+        <div class="app-notice-header">
+          <div id="appNoticeIcon" class="app-notice-icon-badge is-info">ℹ️</div>
+          <div class="app-notice-header-text">
+            <h3 id="appNoticeTitle">Notice</h3>
+            <p id="appNoticeSubtitle" class="muted app-notice-subtitle"></p>
+          </div>
+          <button type="button" id="closeAppNoticeButton" class="exit-modal-close" aria-label="Close">✕</button>
+        </div>
+        <div class="app-notice-body">
+          <p id="appNoticeMessage"></p>
+          <div id="appNoticeDetails" class="app-notice-details" style="display: none;"></div>
+        </div>
+        <div class="exit-modal-actions" id="appNoticeActions">
+          <button type="button" id="cancelAppNoticeButton" class="vehicle-cancel" style="display: none;">Cancel</button>
+          <button type="button" id="confirmAppNoticeButton" class="refresh-button">Got It</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Eye-level Floating Toast Notification Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
