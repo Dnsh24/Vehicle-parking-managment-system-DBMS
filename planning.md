@@ -20,8 +20,14 @@
 - Phase 2 authentication: registration, login, logout, sessions, and profiles
 - Phase 3 vehicle management: authenticated vehicle CRUD, EV-compatible slot
   selection, parking, checkout, map display, and live end-to-end verification
+- Phase 4 administration: area and slot CRUD, per-vehicle area slot counts,
+  rates, maintenance, and admin console
 - Phase 5 search and reservations: backend, frontend, unit tests, and
   user-verified end-to-end flow completed
+- Live parking areas: area picker exposes every configured area; slot labels
+  use category-number format (`C-01`, `B-01`, `T-01`, `E-01`, `H-01`)
+- Immediate parking: compatible-slot search excludes occupied, maintained, and
+  reserved spaces; planned stays cannot overlap a vehicle or slot reservation
 - Phase 8 history and in-app notifications: user-scoped paginated history and
   notifications, read/unread controls, and transactional workflow event
   notifications implemented; live database end-to-end verification remains
@@ -33,7 +39,7 @@
 
 ### Planned
 
-- Core parking operations: live database end-to-end verification and testing
+- Additional application-specific integration testing and usability polish
 
 The existence of a database table does not mean that its related application
 feature is implemented.
@@ -73,8 +79,11 @@ and have been verified end to end.
 
 ### Parking areas and slots
 
-Administrators should manage multiple parking areas, capacities, locations,
-operating hours, parking slots, vehicle types, slot types, and EV capability.
+Administrators manage parking areas, locations, operating hours, and slot
+counts by category: cars, shared bike/scooter, trucks, EV charging, and
+handicapped spaces. New areas create their slots automatically. Slot labels use
+category-number format (`C-01`, `B-01`, `T-01`, `E-01`, `H-01`), numbered within
+each area and category.
 
 Slot states are:
 
@@ -84,8 +93,10 @@ Slot states are:
 - `maintenance`
 - `unavailable`
 
-**Status:** Planned. The schema supports these values, but management APIs and
-screens do not exist.
+**Status:** Implemented. Admin APIs and screens manage areas and individual
+slots. The live area selector loads every configured area. The Phase 10
+backfill provisions slots for empty areas and renumbers existing slots without
+changing their IDs or reservation/session history.
 
 ### Availability and search
 
@@ -99,10 +110,14 @@ A slot is selectable only when it:
 - Is not unavailable or under maintenance
 - Has no conflicting reservation
 
-Real-time availability must not be claimed until backend state updates and
-frontend refresh behavior are implemented.
+Availability is calculated from current backend state when the user searches.
 
-**Status:** Planned.
+**Status:** Implemented. Compatible-slot lookup considers vehicle type, EV and
+handicapped requirements, active assignments/sessions, maintenance, and
+reservation conflicts. Direct parking stays cannot overlap a reservation.
+When the vehicle has an upcoming reservation, the duration dialog limits the
+stay to end before its start; otherwise the user should check in or cancel the
+reservation.
 
 ### Reservations
 
@@ -159,7 +174,10 @@ On entry, create a parking session and record `entry_time`. On exit:
 
 The entry and exit state changes must be transactional.
 
-**Status:** Planned. The `parking_sessions` table exists only.
+**Status:** Implemented. Manual exit is transactional: it records exit and
+duration, calculates fees, updates the session and reservation, releases the
+slot when eligible, and records payment status. The live fee summary is also
+available while a vehicle is parked.
 
 ### Overstay and fees
 
@@ -177,11 +195,13 @@ base_fee = parking_duration × hourly_rate
 total_fee = base_fee + overstay_fee + additional_charges
 ```
 
-Billing units, rounding, minimum charges, and missing-rate behavior must be
-defined before implementation.
+Billing uses the configured hourly rate and overtime rate. The Phase 9 fee
+calculator applies a seven-minute overtime grace period and rounds billable
+time up to the next minute. Manual exit and the live fee summary use these
+rules.
 
-**Status:** Planned. Rate and fee tables exist, but no calculation service
-exists.
+**Status:** Implemented. Fee calculation, overtime accounting, and payment
+status updates are part of parking exit and fee-summary flows.
 
 ### Payments and fee settlements
 
@@ -300,8 +320,8 @@ end-to-end vehicle parking and checkout flows have been verified.
 
 - Backend: authenticated vehicle CRUD and ownership validation.
 - Backend: compatible-slot lookup, atomic vehicle parking, and checkout that
-  releases the slot. These direct assignments track occupancy only; the
-  reservation/session billing workflow remains in later phases.
+  releases the slot. Direct assignments track occupancy only; the separate
+  reservation and session billing workflow is implemented in later phases.
 - Frontend: vehicle list, add, edit, delete, vehicle type and EV controls,
   available-slot selection, and active parking/checkout display.
 - Test duplicate registrations, invalid types, and unauthorized access.
@@ -447,7 +467,5 @@ and relevant error-path tests pass.
 - [README.md](README.md) — overview, setup, and current implementation
 - [API.md](API.md) — verified REST endpoints only
 - [database.md](database.md) — actual PostgreSQL schema
-## Final Version
-This is the final version of the Vehicle Parking Management System project.
 
-## Limitations and next steps
+

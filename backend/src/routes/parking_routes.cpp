@@ -60,7 +60,16 @@ void registerParkingRoutes(
                 "FROM parking_areas pa "
                 "LEFT JOIN parking_slots ps ON ps.area_id = pa.area_id "
                 "GROUP BY pa.area_id "
-                "ORDER BY pa.area_id");
+                "ORDER BY "
+                "CASE "
+                "  WHEN pa.name ILIKE '%basement%' THEN -1 "
+                "  WHEN pa.name ILIKE '%ground%' THEN 0 "
+                "  WHEN pa.name ILIKE '%first%' THEN 1 "
+                "  WHEN pa.name ILIKE '%second%' THEN 2 "
+                "  WHEN pa.name ILIKE '%third%' THEN 3 "
+                "  WHEN pa.name ILIKE '%fourth%' THEN 4 "
+                "  ELSE 100 + pa.area_id "
+                "END, pa.area_id");
 
             crow::json::wvalue response;
             response["areas"] = crow::json::wvalue::list();

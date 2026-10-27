@@ -17,9 +17,13 @@ const parkingMap = document.getElementById("parkingMap");
 const floorTitle = document.getElementById("floorTitle");
 const availableCount = document.getElementById("availableCount");
 const areaName = document.querySelector(".area-picker h2");
-const floorTabs = document.querySelectorAll(".floor-tab");
+const areaHours = document.getElementById("areaHours");
+const areaLocation = document.getElementById("areaLocation");
+const floorTabsContainer = document.querySelector(".floor-tabs");
+let floorTabs = Array.from(document.querySelectorAll(".floor-tab"));
 const refreshButton = document.getElementById("refreshButton");
 const changeAreaButton = document.getElementById("changeAreaButton");
+const areaSelectMenu = document.getElementById("areaSelectMenu");
 
 let areas = [];
 let selectedArea = null;
@@ -216,6 +220,10 @@ function renderFloor(area, slots) {
 
 async function loadFloor(area) {
     selectedArea = area;
+    if (areaName) areaName.textContent = area.name;
+    if (areaHours) areaHours.textContent = area.operating_hours || "Hours unavailable";
+    if (areaLocation) areaLocation.textContent = area.location || "Location unavailable";
+    renderAreaSelectMenu();
     if (floorTitle) floorTitle.textContent = `Loading ${area.name}`;
     renderMessage("Loading parking layout", "Fetching the latest slot availability...");
 
@@ -239,23 +247,55 @@ async function loadFloor(area) {
     }
 }
 
+function getFloorSymbol(areaName) {
+    const name = (areaName || '').toLowerCase();
+    if (name.includes('ground')) return 'G';
+    if (name.includes('first') || name.includes('1st')) return '1';
+    if (name.includes('second') || name.includes('2nd')) return '2';
+    if (name.includes('third') || name.includes('3rd')) return '3';
+    if (name.includes('fourth') || name.includes('4th')) return '4';
+    if (name.includes('basement') || name.includes('b1')) return 'B1';
+    if (name.includes('b2')) return 'B2';
+    const match = name.match(/\b(\d+)\b/);
+    if (match) return match[1];
+    return '•';
+}
+
+function floorSortOrder(areaName) {
+    const name = (areaName || '').toLowerCase();
+    if (name.includes('basement') || name.includes('b2')) return -2;
+    if (name.includes('b1')) return -1;
+    if (name.includes('ground')) return 0;
+    if (name.includes('first') || name.includes('1st')) return 1;
+    if (name.includes('second') || name.includes('2nd')) return 2;
+    if (name.includes('third') || name.includes('3rd')) return 3;
+    if (name.includes('fourth') || name.includes('4th')) return 4;
+    return 100;
+}
+
 function setFloorTab(area, index) {
-    const tab = floorTabs[index];
+    let tab = floorTabs[index];
     if (!tab) {
-        return;
+        tab = document.createElement("button");
+        tab.className = "floor-tab";
+        tab.type = "button";
+        floorTabsContainer?.appendChild(tab);
+        floorTabs = Array.from(document.querySelectorAll(".floor-tab"));
+        tab = floorTabs[index];
     }
+    tab.replaceChildren();
     tab.hidden = false;
     tab.dataset.areaId = area.area_id;
     tab.textContent = area.name.replace("Mall Central — ", "").replace("Mall Central - ", "");
     const badge = document.createElement("span");
-    badge.textContent = index === 0 ? "G" : String(index);
+    badge.textContent = getFloorSymbol(area.name);
     tab.appendChild(badge);
     tab.classList.toggle("active", index === 0);
-    tab.addEventListener("click", () => {
+    tab.onclick = () => {
         floorTabs.forEach((item) => item.classList.remove("active"));
         tab.classList.add("active");
         loadFloor(area);
-    });
+    };
 }
 
 async function loadAreas() {
@@ -266,17 +306,16 @@ async function loadAreas() {
         if (!response.ok || !Array.isArray(data.areas)) {
             throw new Error(data.error?.message || "Parking areas could not be loaded.");
         }
-        areas = data.areas;
+        areas = data.areas.slice().sort((a, b) => floorSortOrder(a.name) - floorSortOrder(b.name));
         if (areas.length === 0) {
             renderMessage("No parking floors available", "Mall Central has no active parking areas configured.");
             return;
         }
         floorTabs.forEach((tab, index) => {
             tab.hidden = index >= areas.length;
-            if (areas[index]) {
-                setFloorTab(areas[index], index);
-            }
         });
+        areas.forEach((area, index) => setFloorTab(area, index));
+        renderAreaSelectMenu();
         await loadFloor(areas[0]);
     } catch (error) {
         renderMessage("Parking information unavailable", error.message, '<button class="map-retry" type="button">Try again</button>');
@@ -285,6 +324,25 @@ async function loadAreas() {
             retryBtn.addEventListener("click", loadAreas);
         }
     }
+}
+
+function renderAreaSelectMenu() {
+    if (!areaSelectMenu) return;
+    areaSelectMenu.replaceChildren(...areas.map((area) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "area-select-option";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", String(String(selectedArea?.area_id) === String(area.area_id)));
+        option.textContent = area.name;
+        option.addEventListener("click", () => {
+            areaSelectMenu.hidden = true;
+            changeAreaButton?.setAttribute("aria-expanded", "false");
+            floorTabs.forEach((tab) => tab.classList.toggle("active", String(tab.dataset.areaId) === String(area.area_id)));
+            loadFloor(area);
+        });
+        return option;
+    }));
 }
 
 if (refreshButton) {
@@ -302,10 +360,17 @@ if (refreshButton) {
 
 if (changeAreaButton) {
     changeAreaButton.addEventListener("click", () => {
-        showAppNotice({
-            title: "Floor & Area Selection",
-            message: "Mall Central floors are available in the floor selector tab bar above the parking layout.",
-            type: "info"
-        });
+        if (areaSelectMenu) {
+            areaSelectMenu.hidden = !areaSelectMenu.hidden;
+            changeAreaButton.setAttribute("aria-expanded", String(!areaSelectMenu.hidden));
+        }
     });
 }
+
+document.addEventListener("click", (event) => {
+    if (areaSelectMenu && !areaSelectMenu.hidden &&
+        !areaSelectMenu.contains(event.target) && !changeAreaButton?.contains(event.target)) {
+        areaSelectMenu.hidden = true;
+        changeAreaButton?.setAttribute("aria-expanded", "false");
+    }
+});

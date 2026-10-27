@@ -16,7 +16,8 @@ const adminPanels = {
     areas: document.getElementById("adminAreasPanel"),
     slots: document.getElementById("adminSlotsPanel"),
     rates: document.getElementById("adminRatesPanel"),
-    maintenance: document.getElementById("adminMaintenancePanel")
+    maintenance: document.getElementById("adminMaintenancePanel"),
+    notifications: document.getElementById("adminNotificationsPanel")
 };
 
 // Users elements
@@ -130,6 +131,9 @@ function loadAdminTab(tab) {
             break;
         case "maintenance":
             loadAdminMaintenanceTab();
+            break;
+        case "notifications":
+            if (typeof loadNotifications === "function") loadNotifications();
             break;
     }
 }
@@ -306,9 +310,13 @@ if (adminAreaForm) {
             name: formData.get("name")?.trim(),
             location: formData.get("location")?.trim(),
             operating_hours: formData.get("operating_hours")?.trim(),
-            capacity: Number(formData.get("capacity")),
             status: formData.get("status")
         };
+        const vehicleCounts = ["car", "bike_scooter", "truck", "ev", "handicapped"];
+        payload.slot_counts = Object.fromEntries(vehicleCounts.map((type) => [type, Number(formData.get(`${type}_slots`) || 0)]));
+        payload.capacity = areaId
+            ? Number(adminAreasCache.find((area) => String(area.area_id) === String(areaId))?.capacity || 0)
+            : Object.values(payload.slot_counts).reduce((total, count) => total + count, 0);
         const lat = formData.get("latitude");
         const lng = formData.get("longitude");
         if (lat) payload.latitude = Number(lat);
@@ -335,6 +343,8 @@ function resetAreaForm() {
     if (!adminAreaForm) return;
     adminAreaForm.reset();
     adminAreaForm.elements.area_id.value = "";
+    adminAreaForm.querySelectorAll(".area-slot-counts input").forEach((input) => { input.disabled = false; input.value = "0"; });
+    adminAreaForm.querySelector(".area-slot-counts legend").textContent = "Slots by vehicle type";
     if (saveAreaButton) saveAreaButton.textContent = "Save Area";
     if (cancelAreaEdit) cancelAreaEdit.hidden = true;
 }
@@ -354,7 +364,8 @@ if (adminAreasListEl) {
             adminAreaForm.elements.name.value = area.name;
             adminAreaForm.elements.location.value = area.location;
             adminAreaForm.elements.operating_hours.value = area.operating_hours || "";
-            adminAreaForm.elements.capacity.value = area.capacity;
+            adminAreaForm.querySelectorAll(".area-slot-counts input").forEach((input) => { input.disabled = true; });
+            adminAreaForm.querySelector(".area-slot-counts legend").textContent = "Slot counts (set when creating an area)";
             adminAreaForm.elements.status.value = area.status;
             if (saveAreaButton) saveAreaButton.textContent = "Update Area";
             if (cancelAreaEdit) cancelAreaEdit.hidden = false;
@@ -472,8 +483,8 @@ if (adminSlotForm) {
                 await adminApiCall(`/api/admin/parking-slots/${encodeURIComponent(slotId)}`, "PUT", payload);
                 setAdminMessage(adminSlotsMessage, `Slot #${slotId} updated.`);
             } else {
-                await adminApiCall(`/api/admin/parking-areas/${encodeURIComponent(areaId)}/slots`, "POST", payload);
-                setAdminMessage(adminSlotsMessage, `Slot ${payload.slot_number} added.`);
+                const result = await adminApiCall(`/api/admin/parking-areas/${encodeURIComponent(areaId)}/slots`, "POST", payload);
+                setAdminMessage(adminSlotsMessage, `Slot ${result.slot.slot_number} added.`);
             }
             resetSlotForm();
             await loadAdminSlots(areaId);

@@ -5,6 +5,8 @@
 #include "validation/validation.h"
 
 #include <iostream>
+#include <array>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -305,17 +307,41 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
              const std::string name = jsonString(body, "name");
              const std::string location = jsonString(body, "location");
              const std::string operating_hours = jsonString(body, "operating_hours");
-             const std::optional<std::int64_t> capacity = jsonInteger(body, "capacity");
+             if (!body.has("slot_counts"))
+             {
+                 return api::errorResponse(400, "INVALID_SLOT_COUNTS", "Provide a slot count for every vehicle type.");
+             }
+             const auto slot_counts_json = body["slot_counts"];
+             const std::array<std::string, 5> slot_count_keys{"car", "bike_scooter", "truck", "ev", "handicapped"};
+             std::array<std::int64_t, 5> slot_counts{};
+             std::int64_t capacity = 0;
+             for (std::size_t i = 0; i < slot_count_keys.size(); ++i)
+             {
+                 if (slot_counts_json.t() != crow::json::type::Object ||
+                     !slot_counts_json.has(slot_count_keys[i]) ||
+                     slot_counts_json[slot_count_keys[i]].t() != crow::json::type::Number ||
+                     slot_counts_json[slot_count_keys[i]].nt() == crow::json::num_type::Floating_point ||
+                     slot_counts_json[slot_count_keys[i]].i() < 0)
+                 {
+                     return api::errorResponse(400, "INVALID_SLOT_COUNTS", "Provide a non-negative integer slot count for every vehicle type.");
+                 }
+                 slot_counts[i] = slot_counts_json[slot_count_keys[i]].i();
+                 capacity += slot_counts[i];
+                 if (capacity > std::numeric_limits<int>::max())
+                 {
+                     return api::errorResponse(400, "INVALID_SLOT_COUNTS", "Total slots must not exceed the supported capacity.");
+                 }
+             }
+             if (capacity == 0)
+             {
+                 return api::errorResponse(400, "INVALID_SLOT_COUNTS", "Configure at least one parking slot.");
+             }
              const std::string status = jsonString(body, "status");
              const std::optional<double> latitude = jsonNumber(body, "latitude");
              const std::optional<double> longitude = jsonNumber(body, "longitude");
              if (!validation::requiredString(name, "name").valid || name.size() > 150)
              {
                  return api::errorResponse(400, "INVALID_NAME", "Name is required and must be at most 150 characters.");
-             }
-             if (!capacity.has_value() || *capacity < 0)
-             {
-                 return api::errorResponse(400, "INVALID_CAPACITY", "Capacity must be a non-negative integer.");
              }
              if (!validation::allowedValue(status, "status", {"active", "inactive", "closed"}).valid)
              {
@@ -330,28 +356,46 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
                  return api::errorResponse(400, "INVALID_LONGITUDE", "Longitude must be between -180 and 180.");
              }
              const pqxx::result rows = database.executeWrite(
+                 "WITH created_area AS ("
                  "INSERT INTO parking_areas (name, location, operating_hours, capacity, status, latitude, longitude) "
                  "VALUES ($1, $2, $3, $4, $5, $6, $7) "
-                 "RETURNING area_id, name, location, operating_hours, capacity, status, "
-                 "to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\\\"T\\\"HH24:MI:SS\\\"Z\\\"') AS created_at",
+                 "RETURNING area_id, name, location, operating_hours, capacity, status, created_at"
+                 "), created_slots AS ("
+                 "INSERT INTO parking_slots (area_id, slot_number, vehicle_type, slot_type, is_ev, status) "
+                 "SELECT created_area.area_id, v.symbol || '-' || LPAD(n::TEXT, 2, '0'), "
+                 "v.vehicle_type, v.slot_type, v.is_ev, 'available' FROM created_area "
+                 "CROSS JOIN (VALUES ('car', $8::INTEGER, 'standard', FALSE, 'C'), "
+                 "('bike', $9::INTEGER, 'two-wheeler', FALSE, 'B'), "
+                 "('truck', $10::INTEGER, 'truck', FALSE, 'T'), "
+                 "('car', $11::INTEGER, 'ev', TRUE, 'E'), "
+                 "('car', $12::INTEGER, 'handicapped', FALSE, 'H')) "
+                 "AS v(vehicle_type, slot_count, slot_type, is_ev, symbol) "
+                 "CROSS JOIN LATERAL generate_series(1, v.slot_count) AS n "
+                 "RETURNING slot_id"
+                 ") SELECT created_area.area_id, created_area.name, created_area.location, "
+                 "created_area.operating_hours, created_area.capacity, created_area.status, "
+                 "to_char(created_area.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\\\"T\\\"HH24:MI:SS\\\"Z\\\"') AS created_at, "
+                 "(SELECT COUNT(*) FROM created_slots) AS slot_count FROM created_area",
                  pqxx::params{
                      name,
                      location,
                      operating_hours,
-                     static_cast<std::int64_t>(*capacity),
+                     capacity,
                      status,
                      latitude,
-                     longitude});
+                     longitude,
+                     slot_counts[0], slot_counts[1], slot_counts[2], slot_counts[3], slot_counts[4]});
+             const std::int64_t created_area_id = rows[0]["area_id"].as<std::int64_t>();
              crow::json::wvalue response;
              response["area"] = api::adminAreaJson(
-                 rows[0]["area_id"].as<std::int64_t>(),
+                 created_area_id,
                  rows[0]["name"].c_str(),
                  rows[0]["location"].c_str(),
                  rows[0]["operating_hours"].is_null() ? "" : rows[0]["operating_hours"].c_str(),
                  rows[0]["capacity"].as<int>(),
                  rows[0]["status"].c_str(),
                  rows[0]["created_at"].c_str(),
-                 0);
+                 rows[0]["slot_count"].as<std::int64_t>());
              return crow::response(201, response);
          }
          catch (const std::exception &exception)
@@ -578,15 +622,11 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
                  return api::errorResponse(404, "PARKING_AREA_NOT_FOUND", "The requested parking area does not exist.");
              }
              const auto body = crow::json::load(request.body);
-             const std::string slot_number = jsonString(body, "slot_number");
+             std::string slot_number;
              const std::string vehicle_type = jsonString(body, "vehicle_type");
              const std::string slot_type = jsonString(body, "slot_type");
              const std::optional<bool> is_ev = jsonBoolean(body, "is_ev");
              const std::string status = jsonString(body, "status");
-             if (!validation::requiredString(slot_number, "slot_number").valid || slot_number.size() > 30)
-             {
-                 return api::errorResponse(400, "INVALID_SLOT_NUMBER", "Slot number is required and must be at most 30 characters.");
-             }
              if (!validation::allowedValue(vehicle_type, "vehicle_type", {"car", "bike", "scooter", "truck", "bus", "other"}).valid)
              {
                  return api::errorResponse(400, "INVALID_VEHICLE_TYPE", "Unsupported vehicle type.");
@@ -602,6 +642,24 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
              if (!validation::allowedValue(status, "status", {"available", "reserved", "occupied", "maintenance", "unavailable"}).valid)
              {
                  return api::errorResponse(400, "INVALID_STATUS", "Unsupported slot status.");
+             }
+             const pqxx::result number_rows = database.executeRead(
+                 "SELECT category.symbol, COALESCE(MAX(split_part(ps.slot_number, '-', 2)::INTEGER), 0) + 1 AS next_number "
+                 "FROM (SELECT CASE "
+                 "WHEN $1::BOOLEAN OR $2 ILIKE '%ev%' OR $2 ILIKE '%electric%' OR $2 ILIKE '%charg%' THEN 'E' "
+                 "WHEN $2 ILIKE '%handicap%' OR $2 ILIKE '%accessible%' THEN 'H' "
+                 "WHEN $3 IN ('bike', 'scooter') THEN 'B' "
+                 "WHEN $3 = 'truck' THEN 'T' ELSE 'C' END AS symbol) AS category "
+                 "LEFT JOIN parking_slots ps ON ps.area_id = $4 "
+                 "AND ps.slot_number ~ ('^' || category.symbol || '-[0-9]+$') "
+                 "GROUP BY category.symbol",
+                 pqxx::params{*is_ev, slot_type, vehicle_type, static_cast<std::int64_t>(area_id)});
+             slot_number = number_rows[0]["symbol"].c_str();
+             slot_number += "-" + std::to_string(number_rows[0]["next_number"].as<std::int64_t>());
+             if (slot_number.size() < 5)
+             {
+                 const std::size_t dash = slot_number.find('-');
+                 slot_number.insert(dash + 1, 2 - (slot_number.size() - dash - 1), '0');
              }
              try
              {
@@ -667,7 +725,7 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
                  return api::errorResponse(404, "PARKING_SLOT_NOT_FOUND", "The requested parking slot does not exist.");
              }
              const auto body = crow::json::load(request.body);
-             const std::string slot_number = body.has("slot_number") ? jsonString(body, "slot_number") : existing[0]["slot_number"].c_str();
+             std::string slot_number;
              const std::string vehicle_type = body.has("vehicle_type") ? jsonString(body, "vehicle_type") : existing[0]["vehicle_type"].c_str();
              const std::string slot_type = body.has("slot_type") ? jsonString(body, "slot_type") : existing[0]["slot_type"].c_str();
              const std::optional<bool> is_ev_parsed = body.has("is_ev") ? jsonBoolean(body, "is_ev") : std::nullopt;
@@ -682,10 +740,6 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
              }
              const std::string status = body.has("status") ? jsonString(body, "status") : existing[0]["status"].c_str();
 
-             if (!validation::requiredString(slot_number, "slot_number").valid || slot_number.size() > 30)
-             {
-                 return api::errorResponse(400, "INVALID_SLOT_NUMBER", "Slot number is required and must be at most 30 characters.");
-             }
              if (!validation::allowedValue(vehicle_type, "vehicle_type", {"car", "bike", "scooter", "truck", "bus", "other"}).valid)
              {
                  return api::errorResponse(400, "INVALID_VEHICLE_TYPE", "Unsupported vehicle type.");
@@ -697,6 +751,31 @@ void registerAdminRoutes(crow::App<crow::CORSHandler> &app, Database &database)
              if (!validation::allowedValue(status, "status", {"available", "reserved", "occupied", "maintenance", "unavailable"}).valid)
              {
                  return api::errorResponse(400, "INVALID_STATUS", "Unsupported slot status.");
+             }
+             const pqxx::result number_rows = database.executeRead(
+                 "SELECT category.symbol, COALESCE(MAX(split_part(ps.slot_number, '-', 2)::INTEGER), 0) + 1 AS next_number "
+                 "FROM (SELECT CASE "
+                 "WHEN $1::BOOLEAN OR $2 ILIKE '%ev%' OR $2 ILIKE '%electric%' OR $2 ILIKE '%charg%' THEN 'E' "
+                 "WHEN $2 ILIKE '%handicap%' OR $2 ILIKE '%accessible%' THEN 'H' "
+                 "WHEN $3 IN ('bike', 'scooter') THEN 'B' "
+                 "WHEN $3 = 'truck' THEN 'T' ELSE 'C' END AS symbol) AS category "
+                 "LEFT JOIN parking_slots ps ON ps.area_id = $4 AND ps.slot_id <> $5 "
+                 "AND ps.slot_number ~ ('^' || category.symbol || '-[0-9]+$') "
+                 "GROUP BY category.symbol",
+                 pqxx::params{is_ev, slot_type, vehicle_type,
+                              existing[0]["area_id"].as<std::int64_t>(),
+                              static_cast<std::int64_t>(slot_id)});
+             const std::string symbol = number_rows[0]["symbol"].c_str();
+             const std::string current_slot_number = existing[0]["slot_number"].c_str();
+             if (current_slot_number.rfind(symbol + "-", 0) == 0 &&
+                 current_slot_number.find_first_not_of("0123456789", symbol.size() + 1) == std::string::npos)
+             {
+                 slot_number = current_slot_number;
+             }
+             else
+             {
+                 const std::string digits = std::to_string(number_rows[0]["next_number"].as<std::int64_t>());
+                 slot_number = symbol + "-" + (digits.size() < 2 ? "0" : "") + digits;
              }
 
              try

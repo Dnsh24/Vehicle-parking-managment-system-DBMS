@@ -1018,7 +1018,7 @@ h3 {
 
 .history-notifications-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
 }
 
@@ -1052,6 +1052,12 @@ h3 {
   opacity: 0.85;
 }
 
+.notification-delete-button {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
 .notification-created {
   display: block;
   margin-top: 6px;
@@ -1079,6 +1085,8 @@ h3 {
    ============================================================ */
 
 .area-picker {
+  position: relative;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1123,6 +1131,45 @@ h3 {
   background: var(--leaf-accent);
   border-color: var(--leaf-strong);
 }
+
+.area-select-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% - 12px);
+  right: 24px;
+  display: grid;
+  min-width: 240px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-divider);
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+}
+
+.area-select-menu[hidden] { display: none; }
+.area-select-option {
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--forest-primary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+.area-select-option:hover, .area-select-option[aria-selected="true"] { background: var(--surface-subtle); }
+
+.area-slot-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 10px;
+  grid-column: 1 / -1;
+  padding: 12px;
+  border: 1px solid var(--border-divider);
+  border-radius: 10px;
+}
+.area-slot-counts label { display: grid; gap: 6px; }
+.area-slot-counts input { width: 100%; }
 
 /* Summary Grid */
 .summary-grid {

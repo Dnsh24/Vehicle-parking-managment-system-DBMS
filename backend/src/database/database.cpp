@@ -223,8 +223,10 @@ ReservationCreationResult Database::createReservation(
     if (slot.empty() ||
         slot[0]["status"].as<std::string>() != "available" ||
         slot[0]["area_status"].as<std::string>() != "active" ||
-        slot[0]["vehicle_type"].as<std::string>() !=
-            vehicle[0]["vehicle_type"].as<std::string>() ||
+        (slot[0]["vehicle_type"].as<std::string>() !=
+             vehicle[0]["vehicle_type"].as<std::string>() &&
+         !(slot[0]["vehicle_type"].as<std::string>() == "bike" &&
+           vehicle[0]["vehicle_type"].as<std::string>() == "scooter")) ||
         (slot[0]["is_ev"].as<bool>() && !vehicle[0]["is_electric"].as<bool>()) ||
         (slot[0]["is_accessible"].as<bool>() &&
          !vehicle[0]["needs_accessible_parking"].as<bool>()))
@@ -544,7 +546,9 @@ VehicleParkingResult Database::parkVehicle(
          slot[0]["status"].as<std::string>() != "occupied" &&
          slot[0]["status"].as<std::string>() != "reserved") ||
         slot[0]["area_status"].as<std::string>() != "active" ||
-        slot[0]["vehicle_type"].as<std::string>() != vehicle[0]["vehicle_type"].as<std::string>() ||
+        (slot[0]["vehicle_type"].as<std::string>() != vehicle[0]["vehicle_type"].as<std::string>() &&
+         !(slot[0]["vehicle_type"].as<std::string>() == "bike" &&
+           vehicle[0]["vehicle_type"].as<std::string>() == "scooter")) ||
         (slot[0]["is_ev"].as<bool>() && !vehicle[0]["is_electric"].as<bool>()) ||
         (slot[0]["is_accessible"].as<bool>() &&
          !vehicle[0]["needs_accessible_parking"].as<bool>()))
@@ -563,12 +567,14 @@ VehicleParkingResult Database::parkVehicle(
         "OR EXISTS (SELECT 1 FROM reservations r "
         "WHERE (r.slot_id = $1 OR r.vehicle_id = $2) "
         "AND r.status IN ('pending', 'confirmed', 'active') "
+        "AND r.start_time < CURRENT_TIMESTAMP + ($3::INTEGER * INTERVAL '1 minute') "
         "AND r.end_time > CURRENT_TIMESTAMP) "
         "OR EXISTS (SELECT 1 FROM maintenance m "
         "WHERE m.slot_id = $1 AND m.status IN ('scheduled', 'in_progress') "
         "AND (m.end_time IS NULL OR m.end_time > CURRENT_TIMESTAMP)) AS unavailable",
         slot_id,
-        vehicle_id);
+        vehicle_id,
+        duration_minutes);
     if (conflicts[0]["unavailable"].as<bool>())
     {
         return {VehicleParkingStatus::slot_unavailable};

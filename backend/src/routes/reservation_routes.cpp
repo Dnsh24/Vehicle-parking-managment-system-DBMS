@@ -198,7 +198,8 @@ void registerReservationRoutes(
                 "(ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
                 "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') AS is_ev, pr.hourly_rate "
                 "FROM vehicles v "
-                "JOIN parking_slots ps ON ps.vehicle_type = v.vehicle_type "
+                "JOIN parking_slots ps ON (ps.vehicle_type = v.vehicle_type "
+                "OR (v.vehicle_type = 'scooter' AND ps.vehicle_type = 'bike')) "
                 "JOIN parking_areas pa ON pa.area_id = ps.area_id "
                 "LEFT JOIN parking_rates pr ON pr.area_id = pa.area_id "
                 "AND pr.vehicle_type = v.vehicle_type AND pr.slot_type = ps.slot_type "
@@ -621,6 +622,38 @@ void registerReservationRoutes(
         {
             std::cerr << "Notification update failed: " << exception.what() << std::endl;
             return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The notification could not be updated.");
+        } });
+
+    CROW_ROUTE(app, "/api/notifications/<uint>").methods(crow::HTTPMethod::DELETE)
+    ([&database](const crow::request &request, unsigned int notification_id)
+     {
+        try
+        {
+            const auto user = findAuthenticatedUser(database, request);
+            if (!user)
+            {
+                return unauthorized();
+            }
+            const pqxx::result rows = database.executeWrite(
+                "DELETE FROM notifications WHERE notification_id = $1 AND user_id = $2 "
+                "RETURNING notification_id",
+                pqxx::params{notification_id, user->user_id});
+            if (rows.empty())
+            {
+                return api::errorResponse(
+                    404,
+                    "NOTIFICATION_NOT_FOUND",
+                    "The requested notification does not exist.");
+            }
+            crow::json::wvalue response;
+            response["notification_id"] = rows[0]["notification_id"].as<std::int64_t>();
+            response["deleted"] = true;
+            return crow::response(response);
+        }
+        catch (const std::exception &exception)
+        {
+            std::cerr << "Notification delete failed: " << exception.what() << std::endl;
+            return api::errorResponse(503, "DATABASE_UNAVAILABLE", "The notification could not be deleted.");
         } });
 
     CROW_ROUTE(app, "/api/notifications/read-all").methods(crow::HTTPMethod::POST)

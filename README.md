@@ -54,12 +54,16 @@ exit, fee summaries, history, and in-app notifications are implemented.
 - Loads parking-area and slot availability.
 - Adds and edits vehicles, shows compatible available slots, and parks a
   selected vehicle until checkout.
+- Lets users change between every configured parking area from the area picker.
 - Searches compatible slots by vehicle, area, location, slot type, EV charging,
   and requested time; creates, views, and cancels reservations.
 - Shows active parking sessions, parking history with fee/payment summaries,
   paginated in-app notifications, unread count, and mark-as-read controls.
 - Administrator console with user role/status controls, area management, slot
   configuration, pricing rates, and maintenance scheduling.
+- Area creation provisions slots by car, shared bike/scooter, truck, EV, and
+  handicapped counts. Slot labels use a vehicle prefix and per-category number
+  (`C-01`, `B-01`, `T-01`, `E-01`, `H-01`).
 - Uses bearer-authenticated requests to the backend at port 3000.
 
 ### Backend
@@ -70,6 +74,9 @@ exit, fee summaries, history, and in-app notifications are implemented.
 - Provides bearer-session authentication and profile operations.
 - Loads parking areas and slots from PostgreSQL.
 - Provides owner-scoped vehicle CRUD, compatible-slot selection, and checkout.
+- Filters immediate parking choices for occupancy, maintenance, compatibility,
+  and reservation conflicts. Stay durations cannot overlap a reservation for
+  that vehicle or slot.
 - Provides owner-scoped availability search and transaction-protected reservation
   creation, listing, details, and cancellation.
 - Provides manual reservation check-in, session exit and fee calculation,
@@ -90,7 +97,6 @@ exit, fee summaries, history, and in-app notifications are implemented.
 ├── README.md
 ├── planning.md
 ├── API.md
-├── OOPS.md
 ├── database.md
 ├── backend
 │   ├── CMakeLists.txt
@@ -190,6 +196,15 @@ The seed scripts create:
 - **`seed_phase4_admin.sql`**: Administrator account (`dnshneela@gmail.com`), baseline rates, and maintenance.
 - **`seed_sample_data.sql`**: Comprehensive evaluation sample data (at least 10-12 records in every major table: `users`, `vehicles`, `parking_areas`, `parking_rates`, `reservations`, `parking_sessions`, `payments`, `notifications`, `maintenance`).
 
+For an existing database, run the repeatable Phase 10 backfill to create slots
+for empty areas and rename slots by vehicle category (`C-01`, `B-01`, `T-01`,
+`E-01`, `H-01`). Slot IDs and associated reservation and parking history are
+preserved:
+
+```text
+psql -U <user> -d vehicle_parking -f database/phase10_area_slot_backfill.sql
+```
+
 ### Backend
 
 The backend requires CMake 3.20 or newer, a C++20 compiler, Crow, and
@@ -200,6 +215,10 @@ CMake configuration:
 cmake -S backend -B backend/build
 cmake --build backend/build
 ```
+
+On Windows, run the build from **Developer PowerShell for Visual Studio Build
+Tools** so the linker can find the Windows SDK libraries. The executable is
+`backend/build/parking_backend.exe`.
 
 Before starting the backend, configure the database password through the
 environment. The other variables have local-development defaults:
@@ -230,12 +249,4 @@ server port. The backend exits with a configuration error if
 - [database.md](database.md) — exact PostgreSQL schema documentation
 - [API.md](API.md) — implemented API routes and pending API work
 
-## Final Version
-This is the final version of the Vehicle Parking Management System project.
-
-## Limitations and next steps
-
-The project has implemented the core parking workflow through Phase 8.
-Live database end-to-end verification for Phase 8 and production deployment
-remain outstanding. Input validation, secrets management, and operational
-hardening remain necessary before the system can be considered complete.
+.

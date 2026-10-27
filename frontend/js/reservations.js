@@ -12,6 +12,7 @@ const refreshReservationsButton = document.getElementById("refreshReservationsBu
 const activeParkingSessions = document.getElementById("activeParkingSessions");
 const parkingHistoryList = document.getElementById("parkingHistoryList");
 const notificationList = document.getElementById("notificationList");
+const adminNotificationList = document.getElementById("adminNotificationList");
 const popoverNotificationList = document.getElementById("popoverNotificationList");
 const notificationUnreadBadge = document.getElementById("notificationUnreadBadge");
 const notificationUnreadLabel = document.getElementById("notificationUnreadLabel");
@@ -20,6 +21,7 @@ const notificationPopover = document.getElementById("notificationPopover");
 const notificationsButton = document.getElementById("notificationsButton");
 const historyPageLabel = document.getElementById("historyPageLabel");
 const notificationPageLabel = document.getElementById("notificationPageLabel");
+const adminNotificationPageLabel = document.getElementById("adminNotificationPageLabel");
 const historyPageSize = 10;
 const notificationPageSize = 10;
 let historyPageOffset = 0;
@@ -369,19 +371,27 @@ function renderNotifications(items) {
                 const readButton = document.createElement("button");
                 readButton.type = "button";
                 readButton.className = "vehicle-cancel";
-                readButton.dataset.notificationId = item.notification_id;
+                readButton.dataset.notificationReadId = item.notification_id;
                 readButton.textContent = compact ? "Read" : "Mark read";
                 card.append(readButton);
             }
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "vehicle-cancel notification-delete-button";
+            deleteButton.dataset.notificationDeleteId = item.notification_id;
+            deleteButton.textContent = "Delete";
+            deleteButton.setAttribute("aria-label", `Delete notification: ${item.title}`);
+            card.append(deleteButton);
             list.append(card);
         });
     };
     renderList(notificationList);
+    renderList(adminNotificationList);
     renderList(popoverNotificationList, true);
 }
 
 async function loadNotifications() {
-    if (!notificationList && !popoverNotificationList) return;
+    if (!notificationList && !adminNotificationList && !popoverNotificationList) return;
     try {
         const response = await fetch(
             `${API_BASE}/api/notifications?limit=${notificationPageSize}&offset=${notificationPageOffset}`,
@@ -390,6 +400,11 @@ async function loadNotifications() {
         const data = await response.json();
         if (!response.ok || !Array.isArray(data.notifications)) {
             throw new Error(data.error?.message || "Notifications could not be loaded.");
+        }
+        if (data.notifications.length === 0 && notificationPageOffset > 0 && notificationPageOffset >= Number(data.total)) {
+            const lastPageOffset = Math.floor(Math.max(0, Number(data.total) - 1) / notificationPageSize) * notificationPageSize;
+            notificationPageOffset = Math.min(notificationPageOffset, lastPageOffset);
+            return loadNotifications();
         }
         renderNotifications(data.notifications);
         const unreadCount = Number(data.unread_count) || 0;
@@ -400,21 +415,28 @@ async function loadNotifications() {
         if (notificationUnreadLabel) {
             notificationUnreadLabel.textContent = `(${unreadCount} unread)`;
         }
+        const adminUnreadLabel = document.getElementById("adminNotificationUnreadLabel");
+        if (adminUnreadLabel) adminUnreadLabel.textContent = `(${unreadCount} unread)`;
         if (popoverUnreadLabel) {
             popoverUnreadLabel.textContent = `${unreadCount} unread`;
         }
         if (notificationPageLabel) {
             notificationPageLabel.textContent = `Page ${Math.floor(notificationPageOffset / notificationPageSize) + 1}`;
         }
+        if (adminNotificationPageLabel) {
+            adminNotificationPageLabel.textContent = `Page ${Math.floor(notificationPageOffset / notificationPageSize) + 1}`;
+        }
         const previous = document.getElementById("previousNotificationPage");
         const next = document.getElementById("nextNotificationPage");
-        if (previous) previous.disabled = notificationPageOffset === 0;
-        if (next) next.disabled = notificationPageOffset + notificationPageSize >= Number(data.total);
+        const adminPrevious = document.getElementById("adminPreviousNotificationPage");
+        const adminNext = document.getElementById("adminNextNotificationPage");
+        [previous, adminPrevious].forEach((button) => { if (button) button.disabled = notificationPageOffset === 0; });
+        [next, adminNext].forEach((button) => { if (button) button.disabled = notificationPageOffset + notificationPageSize >= Number(data.total); });
     } catch (error) {
         const message = document.createElement("p");
         message.className = "muted";
         message.textContent = error.message;
-        [notificationList, popoverNotificationList].forEach((list) => {
+        [notificationList, adminNotificationList, popoverNotificationList].forEach((list) => {
             if (!list) return;
             list.replaceChildren(message.cloneNode(true));
         });
@@ -755,7 +777,14 @@ if (notificationsButton) {
 document.getElementById("viewAllNotifications")?.addEventListener("click", () => {
     if (notificationPopover) notificationPopover.hidden = true;
     notificationsButton?.setAttribute("aria-expanded", "false");
-    document.getElementById("historyNotificationsPanel")?.scrollIntoView({ behavior: "smooth" });
+    notificationPageOffset = 0;
+    if (typeof adminConsole !== "undefined" && adminConsole && !adminConsole.hidden) {
+        const notificationsTab = document.querySelector('.admin-nav-tab[data-admin-tab="notifications"]');
+        notificationsTab?.click();
+    } else {
+        if (typeof showDashboardPage === "function") showDashboardPage("notifications");
+        loadNotifications();
+    }
 });
 
 document.addEventListener("click", (event) => {
@@ -786,20 +815,33 @@ document.getElementById("nextNotificationPage")?.addEventListener("click", () =>
     notificationPageOffset += notificationPageSize;
     loadNotifications();
 });
+document.getElementById("adminPreviousNotificationPage")?.addEventListener("click", () => {
+    notificationPageOffset = Math.max(0, notificationPageOffset - notificationPageSize);
+    loadNotifications();
+});
+document.getElementById("adminNextNotificationPage")?.addEventListener("click", () => {
+    notificationPageOffset += notificationPageSize;
+    loadNotifications();
+});
 
-if (notificationList || popoverNotificationList) {
-    const handleNotificationRead = async (event) => {
-        const button = event.target.closest("button[data-notification-id]");
+if (notificationList || adminNotificationList || popoverNotificationList) {
+    const handleNotificationAction = async (event) => {
+        const button = event.target.closest("button[data-notification-read-id], button[data-notification-delete-id]");
         if (!button) return;
         button.disabled = true;
         try {
-            const response = await fetch(
-                `${API_BASE}/api/notifications/${encodeURIComponent(button.dataset.notificationId)}/read`,
-                { method: "POST", headers: authHeaders() }
-            );
+            const isDelete = button.hasAttribute("data-notification-delete-id");
+            const id = isDelete ? button.dataset.notificationDeleteId : button.dataset.notificationReadId;
+            const response = await fetch(`${API_BASE}/api/notifications/${encodeURIComponent(id)}${isDelete ? "" : "/read"}`, {
+                method: isDelete ? "DELETE" : "POST",
+                headers: authHeaders()
+            });
             const data = await response.json();
-            if (!response.ok || data.is_read !== true) {
-                throw new Error(data.error?.message || "The notification could not be marked as read.");
+            if (!response.ok || (isDelete ? data.deleted !== true : data.is_read !== true)) {
+                throw new Error(data.error?.message || (isDelete ? "The notification could not be deleted." : "The notification could not be marked as read."));
+            }
+            if (isDelete && notificationPageOffset > 0 && notificationList?.children.length === 1) {
+                notificationPageOffset = Math.max(0, notificationPageOffset - notificationPageSize);
             }
             await loadNotifications();
         } catch (error) {
@@ -807,11 +849,12 @@ if (notificationList || popoverNotificationList) {
             button.textContent = error.message;
         }
     };
-    notificationList?.addEventListener("click", handleNotificationRead);
-    popoverNotificationList?.addEventListener("click", handleNotificationRead);
+    notificationList?.addEventListener("click", handleNotificationAction);
+    adminNotificationList?.addEventListener("click", handleNotificationAction);
+    popoverNotificationList?.addEventListener("click", handleNotificationAction);
 }
 
-document.getElementById("markAllNotificationsRead")?.addEventListener("click", async (event) => {
+async function markAllNotificationsAsRead(event) {
     const button = event.currentTarget;
     button.disabled = true;
     try {
@@ -829,7 +872,9 @@ document.getElementById("markAllNotificationsRead")?.addEventListener("click", a
     } finally {
         button.disabled = false;
     }
-});
+}
+document.getElementById("markAllNotificationsRead")?.addEventListener("click", markAllNotificationsAsRead);
+document.getElementById("adminMarkAllNotificationsRead")?.addEventListener("click", markAllNotificationsAsRead);
 const sessionExitDialog = document.getElementById("sessionExitDialog");
 const exitModalTitle = document.getElementById("exitModalTitle");
 const exitModalBody = document.getElementById("exitModalBody");

@@ -234,7 +234,7 @@ Stores parking locations.
 | `latitude` | `NUMERIC(9,6)` | Nullable; between -90 and 90 when present | Latitude |
 | `longitude` | `NUMERIC(9,6)` | Nullable; between -180 and 180 when present | Longitude |
 | `operating_hours` | `TEXT` | Nullable | Operating-hours description |
-| `capacity` | `INTEGER` | `NOT NULL`, default `0`, non-negative | Capacity |
+| `capacity` | `INTEGER` | `NOT NULL`, default `0`, non-negative | Total slot count; the area creation form computes this from its per-category counts |
 | `status` | `VARCHAR(20)` | `NOT NULL`, default `'active'`; `active`, `inactive`, or `closed` | Area status |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL`, default `CURRENT_TIMESTAMP` | Creation time |
 
@@ -246,7 +246,7 @@ Stores slots within areas.
 | --- | --- | --- | --- |
 | `slot_id` | `BIGINT` identity | Primary key | Slot identifier |
 | `area_id` | `BIGINT` | `NOT NULL`; FK to `parking_areas.area_id`, `ON DELETE CASCADE` | Parent area |
-| `slot_number` | `VARCHAR(30)` | `NOT NULL` | Slot label |
+| `slot_number` | `VARCHAR(30)` | `NOT NULL` | Slot label in vehicle-symbol sequence format, such as `C-01`, `B-01`, `T-01`, `E-01`, or `H-01`; sequence is per area and category |
 | `vehicle_type` | `VARCHAR(30)` | `NOT NULL`; `car`, `bike`, `scooter`, `truck`, `bus`, or `other` | Allowed vehicle type |
 | `slot_type` | `VARCHAR(30)` | `NOT NULL`, default `'standard'` | Slot category |
 | `is_ev` | `BOOLEAN` | `NOT NULL`, default `FALSE` | EV capability |
@@ -439,10 +439,19 @@ prototype:
 - Mall Central - First Floor
 - Mall Central - Second Floor
 
-Each floor receives 32 slots: four truck, ten bike/scooter, twelve normal car,
-three EV, and three handicapped slots. The script is repeatable for these names
-and uses example slot statuses for local development only. It does not replace
-production data or create user accounts.
+Each floor receives 32 slots: four truck, ten shared bike/scooter, twelve
+normal car, three EV, and three handicapped slots. Slot labels use vehicle
+symbols and category-local numbering (for example, `T-01`, `B-01`, `C-01`,
+`E-01`, and `H-01`). The script is repeatable for these names and uses example
+slot statuses for local development only. It does not replace production data
+or create user accounts.
+
+## Existing-area slot backfill
+
+`database/phase10_area_slot_backfill.sql` is repeatable. It creates car slots
+up to the configured capacity for areas with no slots, then renumbers every
+existing slot by category. It changes `slot_number` only; slot IDs and linked
+reservation, session, assignment, and maintenance history are preserved.
 
 ## Phase 4 development seed
 

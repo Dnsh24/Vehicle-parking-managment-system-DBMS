@@ -108,12 +108,17 @@ Handicapped slots are included only when the vehicle has
 `needs_accessible_parking` set to `true`; the map continues to show the
 handicapped section to all users. Only the vehicle's owner can request its
 slots. A vehicle that is already parked returns `409 VEHICLE_ALREADY_PARKED`.
+The response may include the vehicle's next active reservation. Its reserved
+slot is omitted, while other compatible slots remain selectable. The frontend
+warns about the reservation and limits the requested stay to end before its
+start time. Overdue reservations are processed before availability is returned.
 
 ### `POST /api/vehicles/{vehicle_id}/park`
 
 Assigns the owner's vehicle to an available compatible slot. The JSON body
 requires a positive `slot_id`. It optionally accepts a planned stay duration:
-`duration_hours` (integer, 1 to 24, default 2) or `duration_minutes` (integer, 60 to 1440).
+`duration_hours` (number, greater than 0 and at most 24) or
+`duration_minutes` (integer, 1 to 1440, default 120).
 The operation atomically calculates `planned_end_time = CURRENT_TIMESTAMP + duration`,
 marks the slot occupied, and records the active assignment. EV charging slots require the
 vehicle to be marked electric. Handicapped slots require
@@ -121,9 +126,12 @@ vehicle to be marked electric. Handicapped slots require
 available, is inactive, or is incompatible returns `409
 PARKING_SLOT_UNAVAILABLE`.
 
-Slots with any pending, confirmed, or active reservation that has not ended are
-not eligible for direct parking, so a future reservation cannot be displaced
-by a manual assignment.
+The stay cannot overlap a pending, confirmed, or active reservation for either
+the vehicle or selected slot. A future reservation beginning after the planned
+stay is allowed; the frontend limits the duration when the vehicle has an
+upcoming reservation. Overlapping reservations return
+`409 PARKING_RESERVATION_CONFLICT`. This prevents manual parking from displacing
+a booking.
 
 The response contains a `parking` object with the assignment, vehicle, slot,
 area, and parking start time. An active slot remains occupied until checkout.
@@ -254,6 +262,12 @@ session exit, overstay, and fee-status changes.
 Marks an owned notification as read. Repeating the request is safe. Returns
 `404 NOTIFICATION_NOT_FOUND` for a missing notification or one owned by another
 user.
+
+### `DELETE /api/notifications/{notification_id}`
+
+Deletes a notification owned by the authenticated user and returns the deleted
+ID with `deleted: true`. Returns `404 NOTIFICATION_NOT_FOUND` if the notification
+does not exist or belongs to another user.
 
 ### `POST /api/notifications/read-all`
 
@@ -439,7 +453,7 @@ Example response:
     {
       "slot_id": 1,
       "area_id": 1,
-      "slot_number": "G-A01",
+      "slot_number": "C-01",
       "vehicle_type": "car",
       "slot_type": "standard",
       "is_ev": false,
@@ -483,9 +497,14 @@ Returns all parking areas with their current `slot_count`.
 
 ### `POST /api/admin/parking-areas`
 
-Creates a new parking area. Requires `name` (1-150 chars), `location`, non-negative
-`capacity`, and `status` (`active`, `inactive`, or `closed`). `operating_hours`,
-`latitude`, and `longitude` are optional. Returns `201 Created`.
+Creates a new parking area. Requires `name` (1-150 chars), `location`,
+`slot_counts`, and `status` (`active`, `inactive`, or `closed`). `slot_counts`
+requires non-negative integer counts for `car`, `bike_scooter`, `truck`, `ev`,
+and `handicapped`; the total must be at least one. Capacity is calculated from
+these counts, and slots are created automatically. Bike and scooter vehicles
+share bike slots. EV and handicapped spaces are car slots with the corresponding
+special slot type. `operating_hours`, `latitude`, and `longitude` are optional.
+Returns `201 Created`.
 
 ### `PUT /api/admin/parking-areas/{area_id}`
 
@@ -503,9 +522,11 @@ allowed vehicle type, slot type, EV flag, and status.
 
 ### `POST /api/admin/parking-areas/{area_id}/slots`
 
-Adds a slot to the area. Requires `slot_number`, `vehicle_type` (`car`, `bike`,
-`scooter`, `truck`, `bus`, `other`), `slot_type`, `is_ev`, and `status`. Returns
-`409 DUPLICATE_SLOT_NUMBER` if a slot with the same number exists in the area.
+Adds a slot to the area. Requires `vehicle_type` (`car`, `bike`, `scooter`,
+`truck`, `bus`, `other`), `slot_type`, `is_ev`, and `status`. The server assigns
+the next number by category: `C-01` car, `B-01` bike/scooter, `T-01` truck,
+`E-01` EV, or `H-01` handicapped. Returns `409 DUPLICATE_SLOT_NUMBER` if a
+number collision occurs.
 
 ### `PUT /api/admin/parking-slots/{slot_id}`
 

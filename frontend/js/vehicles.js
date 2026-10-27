@@ -282,7 +282,12 @@ if (vehicleList) {
         if (!choice) {
             return;
         }
-        await promptImmediateParking(choice.dataset.vehicleId, choice.dataset.slotId, choice.textContent);
+        await promptImmediateParking(
+            choice.dataset.vehicleId,
+            choice.dataset.slotId,
+            choice.textContent,
+            choice.dataset.reservationStart || ""
+        );
     });
 }
 
@@ -317,6 +322,12 @@ async function showAvailableSlots(vehicleId) {
         const heading = document.createElement("strong");
         heading.textContent = "Choose an available slot";
         options.append(heading);
+        if (data.reservation) {
+            const notice = document.createElement("p");
+            notice.className = "muted";
+            notice.textContent = `Reservation #${data.reservation.reservation_id} is ${data.reservation.status} for ${data.reservation.area_name}, slot ${data.reservation.slot_number}, from ${formatIsoTimestamp(data.reservation.start_time)} to ${formatIsoTimestamp(data.reservation.end_time)}. Slots reserved for that booking are hidden. Immediate parking duration must finish before this reservation starts; otherwise use Reservations to check in or cancel it.`;
+            options.append(notice);
+        }
         if (data.slots.length === 0) {
             slotSelection = null;
             applySlotSelection();
@@ -336,6 +347,7 @@ async function showAvailableSlots(vehicleId) {
                 choice.className = "slot-choice";
                 choice.dataset.slotId = slot.slot_id;
                 choice.dataset.vehicleId = vehicleId;
+                choice.dataset.reservationStart = data.reservation?.start_time || "";
                 const features = [
                     slot.is_ev || /\bev\b|electric|charg/i.test(slot.slot_type) ? "EV charging" : "",
                     /handicap|accessible/i.test(slot.slot_type) ? "Handicapped" : ""
@@ -351,10 +363,27 @@ async function showAvailableSlots(vehicleId) {
     }
 }
 
-function promptImmediateParking(vehicleId, slotId, slotLabel) {
+function promptImmediateParking(vehicleId, slotId, slotLabel, reservationStartIso = "") {
+    const reservationStartMs = Date.parse(reservationStartIso);
+    const maxMinutesBeforeReservation = Number.isFinite(reservationStartMs)
+        ? Math.floor((reservationStartMs - Date.now()) / 60000) - 1
+        : null;
+    if (maxMinutesBeforeReservation !== null && maxMinutesBeforeReservation < 1) {
+        showAppNotice({
+            title: "Reservation Check-In Due",
+            message: "This vehicle’s reservation has started or is less than one minute away. Check in or cancel the reservation from the Reservations section before parking it elsewhere.",
+            type: "info",
+            confirmText: "Close"
+        });
+        return Promise.resolve(false);
+    }
+
     const dialog = document.getElementById("immediateParkingDialog");
     if (!dialog) {
-        return parkVehicleInSlot(vehicleId, slotId, 120);
+        const fallbackDuration = maxMinutesBeforeReservation === null
+            ? 120
+            : Math.min(120, maxMinutesBeforeReservation);
+        return parkVehicleInSlot(vehicleId, slotId, fallbackDuration);
     }
     const titleEl = document.getElementById("immediateParkingTitle");
     const promptEl = document.getElementById("immediateParkingPrompt");
@@ -370,19 +399,34 @@ function promptImmediateParking(vehicleId, slotId, slotLabel) {
         titleEl.textContent = `Park Vehicle · ${slotLabel.trim()}`;
     }
     if (promptEl) {
-        promptEl.textContent = "How long do you plan to stay? (Durations under 1 hour are charged the 1-hour slot rate)";
+        promptEl.textContent = maxMinutesBeforeReservation === null
+            ? "How long do you plan to stay? (Durations under 1 hour are charged the 1-hour slot rate)"
+            : `Reservation starts at ${formatIsoTimestamp(reservationStartIso)}. Choose a stay of at most ${maxMinutesBeforeReservation} minutes so this vehicle is free for check-in.`;
     }
     if (durationSelect) {
-        durationSelect.value = "120";
+        const presetOptions = Array.from(durationSelect.options).filter((option) => /^\d+$/.test(option.value));
+        presetOptions.forEach((option) => {
+            option.disabled = maxMinutesBeforeReservation !== null && Number(option.value) > maxMinutesBeforeReservation;
+        });
+        const defaultPreset = presetOptions.find((option) => !option.disabled && option.value === "120") ||
+            presetOptions.filter((option) => !option.disabled).pop();
+        durationSelect.value = defaultPreset ? defaultPreset.value : "custom";
     }
     if (customGroup) {
-        customGroup.style.display = "none";
+        customGroup.style.display = maxMinutesBeforeReservation !== null && maxMinutesBeforeReservation < 120
+            ? "block"
+            : "none";
     }
     if (customHoursInput) {
         customHoursInput.value = "0";
     }
     if (customMinutesInput) {
-        customMinutesInput.value = "30";
+        customMinutesInput.max = maxMinutesBeforeReservation === null
+            ? "59"
+            : String(Math.min(59, maxMinutesBeforeReservation));
+        customMinutesInput.value = maxMinutesBeforeReservation === null
+            ? "30"
+            : String(Math.min(30, maxMinutesBeforeReservation));
     }
 
     const onDurationChange = () => {
@@ -413,6 +457,14 @@ function promptImmediateParking(vehicleId, slotId, slotLabel) {
                 totalMinutes = Math.max(1, Math.min(1440, (hours * 60) + mins));
             } else if (durationSelect) {
                 totalMinutes = Math.max(1, Math.min(1440, parseInt(durationSelect.value, 10) || 120));
+            }
+            if (maxMinutesBeforeReservation !== null && totalMinutes > maxMinutesBeforeReservation) {
+                if (durationSelect) durationSelect.value = "custom";
+                if (customGroup) customGroup.style.display = "block";
+                if (promptEl) {
+                    promptEl.textContent = `This reservation starts at ${formatIsoTimestamp(reservationStartIso)}. Choose a stay of at most ${maxMinutesBeforeReservation} minutes.`;
+                }
+                return;
             }
             cleanup();
             await parkVehicleInSlot(vehicleId, slotId, totalMinutes);

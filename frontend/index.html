@@ -99,6 +99,9 @@
         <button class="dashboard-page-button" id="mapPageButton" type="button" aria-controls="mapPage">
           Parking map
         </button>
+        <button class="dashboard-page-button" id="notificationsPageButton" type="button" aria-controls="notificationsPage">
+          Notifications
+        </button>
       </nav>
 
       <div id="activityPage" class="dashboard-page">
@@ -239,23 +242,6 @@
               <button class="vehicle-cancel" id="nextHistoryPage" type="button">Next</button>
             </div>
           </div>
-          <div>
-            <div class="reservation-history-heading">
-              <div>
-                <p class="eyebrow">Updates</p>
-                <h2>Notifications <span class="muted" id="notificationUnreadLabel">(0 unread)</span></h2>
-              </div>
-              <button class="vehicle-cancel" id="markAllNotificationsRead" type="button">Mark all read</button>
-            </div>
-            <div class="reservation-list" id="notificationList" aria-live="polite">
-              <p class="muted">Loading notifications...</p>
-            </div>
-            <div class="history-pagination">
-              <button class="vehicle-cancel" id="previousNotificationPage" type="button">Previous</button>
-              <span class="muted" id="notificationPageLabel">Page 1</span>
-              <button class="vehicle-cancel" id="nextNotificationPage" type="button">Next</button>
-            </div>
-          </div>
         </div>
       </section>
       </div>
@@ -279,7 +265,8 @@
             <h2>Mall Central Parking Building</h2>
           </div>
         </div>
-        <button class="change-area" id="changeAreaButton" type="button">Change area <span aria-hidden="true">⌄</span></button>
+        <button class="change-area" id="changeAreaButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="areaSelectMenu">Change area <span aria-hidden="true">⌄</span></button>
+        <div class="area-select-menu" id="areaSelectMenu" role="listbox" aria-label="Choose a parking area" hidden></div>
       </section>
 
       <section class="summary-grid" aria-label="Parking area summary">
@@ -289,11 +276,11 @@
         </div>
         <div class="summary-card">
           <span class="summary-icon blue" aria-hidden="true">◷</span>
-          <div><span class="label">Operating hours</span><strong>07:00 <small>– 22:00</small></strong></div>
+          <div><span class="label">Operating hours</span><strong id="areaHours">07:00 <small>– 22:00</small></strong></div>
         </div>
         <div class="summary-card">
           <span class="summary-icon purple" aria-hidden="true">⌖</span>
-          <div><span class="label">Location</span><strong>Mall Central <small>Parking building</small></strong></div>
+          <div><span class="label">Location</span><strong id="areaLocation">Mall Central <small>Parking building</small></strong></div>
         </div>
       </section>
 
@@ -342,6 +329,25 @@
         </aside>
       </div>
       </div>
+
+      <div id="notificationsPage" class="dashboard-page" hidden>
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">Updates</p>
+            <h1>All notifications <span class="muted" id="notificationUnreadLabel">(0 unread)</span></h1>
+            <p class="muted">Review and manage notifications for your account.</p>
+          </div>
+          <button class="vehicle-cancel" id="markAllNotificationsRead" type="button">Mark all read</button>
+        </section>
+        <div class="reservation-list" id="notificationList" aria-live="polite">
+          <p class="muted">Loading notifications...</p>
+        </div>
+        <div class="history-pagination">
+          <button class="vehicle-cancel" id="previousNotificationPage" type="button">Previous</button>
+          <span class="muted" id="notificationPageLabel">Page 1</span>
+          <button class="vehicle-cancel" id="nextNotificationPage" type="button">Next</button>
+        </div>
+      </div>
     </main>
 
     <!-- Administrator Console Content -->
@@ -365,6 +371,7 @@
         <button class="admin-nav-tab" data-admin-tab="slots" type="button">Parking Slots</button>
         <button class="admin-nav-tab" data-admin-tab="rates" type="button">Parking Rates</button>
         <button class="admin-nav-tab" data-admin-tab="maintenance" type="button">Maintenance</button>
+        <button class="admin-nav-tab" data-admin-tab="notifications" type="button">Notifications</button>
       </nav>
 
       <!-- Users Panel -->
@@ -419,9 +426,14 @@
           <label>Operating hours
             <input name="operating_hours" type="text" placeholder="e.g. 07:00 - 22:00" />
           </label>
-          <label>Capacity
-            <input name="capacity" type="number" min="0" placeholder="e.g. 32" required />
-          </label>
+          <fieldset class="area-slot-counts">
+            <legend>Slots by vehicle type</legend>
+            <label>Cars<input name="car_slots" type="number" min="0" value="0" required /></label>
+            <label>Bike &amp; scooter spaces<input name="bike_scooter_slots" type="number" min="0" value="0" required /></label>
+            <label>Trucks<input name="truck_slots" type="number" min="0" value="0" required /></label>
+            <label>EV charging spaces<input name="ev_slots" type="number" min="0" value="0" required /></label>
+            <label>Handicapped spaces<input name="handicapped_slots" type="number" min="0" value="0" required /></label>
+          </fieldset>
           <label>Status
             <select name="status" required>
               <option value="active">Active</option>
@@ -478,7 +490,7 @@
         <form class="admin-form" id="adminSlotForm">
           <input name="slot_id" type="hidden" />
           <label>Slot number
-            <input name="slot_number" type="text" maxlength="30" placeholder="e.g. G-A01" required />
+            <input name="slot_number" type="text" maxlength="30" placeholder="Auto assigned (e.g. C-01)" readonly />
           </label>
           <label>Vehicle type
             <select name="vehicle_type" required>
@@ -648,6 +660,25 @@
               <tr><td colspan="7" class="muted">Loading maintenance records...</td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section class="panel admin-panel" id="adminNotificationsPanel" hidden>
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Updates</p>
+            <h2>All notifications <span class="muted" id="adminNotificationUnreadLabel">(0 unread)</span></h2>
+            <p class="muted">Review and manage notifications for your admin account.</p>
+          </div>
+          <button class="vehicle-cancel" id="adminMarkAllNotificationsRead" type="button">Mark all read</button>
+        </div>
+        <div class="reservation-list" id="adminNotificationList" aria-live="polite">
+          <p class="muted">Loading notifications...</p>
+        </div>
+        <div class="history-pagination">
+          <button class="vehicle-cancel" id="adminPreviousNotificationPage" type="button">Previous</button>
+          <span class="muted" id="adminNotificationPageLabel">Page 1</span>
+          <button class="vehicle-cancel" id="adminNextNotificationPage" type="button">Next</button>
         </div>
       </section>
     </main>

@@ -103,6 +103,7 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
             {
                 return unauthorized();
             }
+            database.cancelOverdueReservations();
             const pqxx::result vehicle_rows = database.executeRead(
                 "SELECT vehicle_type, is_electric, needs_accessible_parking "
                 "FROM vehicles WHERE vehicle_id = $1 AND user_id = $2",
@@ -125,6 +126,16 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 return api::errorResponse(409, "VEHICLE_ALREADY_PARKED", "Check out this vehicle before choosing another slot.");
             }
 
+            const pqxx::result reservation_rows = database.executeRead(
+                "SELECT r.reservation_id, r.status, pa.name AS area_name, ps.slot_number, "
+                "to_char(r.start_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS start_time, "
+                "to_char(r.end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS end_time "
+                "FROM reservations r JOIN parking_slots ps ON ps.slot_id = r.slot_id "
+                "JOIN parking_areas pa ON pa.area_id = ps.area_id "
+                "WHERE r.vehicle_id = $1 AND r.status IN ('pending', 'confirmed', 'active') "
+                "AND r.end_time > CURRENT_TIMESTAMP "
+                "ORDER BY r.start_time, r.reservation_id LIMIT 1",
+                pqxx::params{vehicle_id});
             const pqxx::result rows = database.executeRead(
                 "SELECT ps.slot_id, ps.area_id, ps.slot_number, ps.vehicle_type, "
                 "ps.slot_type, (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
@@ -134,7 +145,7 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 "JOIN parking_areas pa ON pa.area_id = ps.area_id "
                 "WHERE (ps.status = 'available' OR ps.status IN ('occupied', 'reserved')) "
                 "AND pa.status = 'active' "
-                "AND ps.vehicle_type = $1 "
+                "AND (ps.vehicle_type = $1 OR ($1 = 'scooter' AND ps.vehicle_type = 'bike')) "
                 "AND (NOT (ps.is_ev OR ps.slot_type ~* '(^|[^[:alnum:]])ev([^[:alnum:]]|$)' "
                 "OR ps.slot_type ILIKE '%electric%' OR ps.slot_type ILIKE '%charg%') OR $3) "
                 "AND ($4 OR (ps.slot_type NOT ILIKE '%handicap%' AND ps.slot_type NOT ILIKE '%accessible%')) "
@@ -146,11 +157,15 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                 "WHERE s.vehicle_id = $2 AND s.exit_time IS NULL "
                 "AND s.status IN ('active', 'overstayed')) "
                 "AND NOT EXISTS (SELECT 1 FROM reservations r "
-                "WHERE r.slot_id = ps.slot_id AND r.status IN ('pending', 'confirmed', 'active') "
-                "AND r.start_time <= CURRENT_TIMESTAMP AND r.end_time > CURRENT_TIMESTAMP) "
+                "WHERE r.slot_id = ps.slot_id "
+                "AND r.status IN ('pending', 'confirmed', 'active') "
+                "AND r.end_time > CURRENT_TIMESTAMP) "
                 "AND NOT EXISTS (SELECT 1 FROM parking_sessions s "
                 "WHERE s.slot_id = ps.slot_id AND s.exit_time IS NULL "
                 "AND s.status IN ('active', 'overstayed')) "
+                "AND NOT EXISTS (SELECT 1 FROM maintenance m "
+                "WHERE m.slot_id = ps.slot_id AND m.status IN ('scheduled', 'in_progress') "
+                "AND (m.end_time IS NULL OR m.end_time > CURRENT_TIMESTAMP)) "
                 "ORDER BY pa.area_id, ps.slot_number",
                 pqxx::params{
                     vehicle_rows[0]["vehicle_type"].c_str(),
@@ -160,6 +175,15 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
 
             crow::json::wvalue response;
             response["slots"] = crow::json::wvalue::list();
+            if (!reservation_rows.empty())
+            {
+                response["reservation"]["reservation_id"] = reservation_rows[0]["reservation_id"].as<std::int64_t>();
+                response["reservation"]["status"] = reservation_rows[0]["status"].c_str();
+                response["reservation"]["area_name"] = reservation_rows[0]["area_name"].c_str();
+                response["reservation"]["slot_number"] = reservation_rows[0]["slot_number"].c_str();
+                response["reservation"]["start_time"] = reservation_rows[0]["start_time"].c_str();
+                response["reservation"]["end_time"] = reservation_rows[0]["end_time"].c_str();
+            }
             std::size_t index = 0;
             for (const auto &row : rows)
             {
@@ -231,6 +255,22 @@ void registerVehicleRoutes(crow::App<crow::CORSHandler> &app, Database &database
                     return api::errorResponse(400, "INVALID_DURATION", "duration_hours must be between 0.01 and 24 hours.");
                 }
                 duration_minutes = std::max(1, std::min(1440, static_cast<int>(std::round(hours * 60.0))));
+            }
+
+            const pqxx::result reservation_conflict = database.executeRead(
+                "SELECT EXISTS (SELECT 1 FROM reservations r "
+                "LEFT JOIN vehicles v ON v.vehicle_id = r.vehicle_id "
+                "WHERE (r.slot_id = $2 OR (r.vehicle_id = $1 AND v.user_id = $3)) "
+                "AND r.status IN ('pending', 'confirmed', 'active') "
+                "AND r.start_time < CURRENT_TIMESTAMP + ($4::INTEGER * INTERVAL '1 minute') "
+                "AND r.end_time > CURRENT_TIMESTAMP) AS has_conflict",
+                pqxx::params{static_cast<std::int64_t>(vehicle_id), slot_id, user->user_id, duration_minutes});
+            if (!reservation_conflict.empty() && reservation_conflict[0]["has_conflict"].as<bool>())
+            {
+                return api::errorResponse(
+                    409,
+                    "PARKING_RESERVATION_CONFLICT",
+                    "This stay overlaps a reservation. Choose a shorter duration, or use Reservations to check in or cancel the booking.");
             }
 
             const VehicleParkingResult result = database.parkVehicle(
