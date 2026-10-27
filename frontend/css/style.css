@@ -2392,7 +2392,7 @@ dialog.exit-modal::backdrop {
   gap: 9px;
   padding: 0 12px;
   color: #d5edf8 !important;
-  background: #071f35 !important;
+  background: #465a7e !important;
   border: 1px solid #61c8f5 !important;
   border-radius: 7px !important;
   box-shadow: none !important;
@@ -2413,8 +2413,10 @@ dialog.exit-modal::backdrop {
   padding: 12px 0 !important;
   margin: 0 !important;
   color: #ffffff !important;
-  background: transparent !important;
-  background-color: transparent !important;
+  color-scheme: dark !important;
+  /* Keep regular and autofilled inputs on the same solid blue-gray surface. */
+  background: #465a7e !important;
+  background-color: #465a7e !important;
   border: 0 !important;
   border-radius: 0 !important;
   outline: 0 !important;
@@ -2422,7 +2424,6 @@ dialog.exit-modal::backdrop {
   font: inherit !important;
   -webkit-font-smoothing: antialiased !important;
   text-rendering: optimizeLegibility !important;
-  transform: translateZ(0) !important;
 }
 
 .auth-input input::placeholder {
@@ -2450,15 +2451,34 @@ dialog.exit-modal::backdrop {
   font-weight: 700;
 }
 
+.auth-input input:autofill,
+.auth-input input:-webkit-autofill,
+.auth-input input:autofill:hover,
+.auth-input input:-webkit-autofill:hover,
+.auth-input input:autofill:focus,
+.auth-input input:-webkit-autofill:focus,
+.auth-input input:autofill:active,
+.auth-input input:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
+  color-scheme: dark !important;
+  -webkit-box-shadow: 0 0 0 1000px #465a7e inset !important;
+  box-shadow: 0 0 0 1000px #465a7e inset !important;
+  background-color: #465a7e !important;
+  background-image: linear-gradient(#465a7e, #465a7e) !important;
+  background-clip: padding-box !important;
+}
+
+/* Chrome paints credential autofill with its own translucent fill. Keep a
+   solid layer on top of that paint for every autofill interaction state. */
 .auth-input input:-webkit-autofill,
 .auth-input input:-webkit-autofill:hover,
 .auth-input input:-webkit-autofill:focus,
 .auth-input input:-webkit-autofill:active {
-  -webkit-text-fill-color: white;
-  caret-color: white;
-  -webkit-box-shadow: 0 0 0 1000px #071f35 inset;
-  box-shadow: 0 0 0 1000px #071f35 inset;
-  transition: background-color 9999s ease-in-out 0s;
+  -webkit-box-shadow: 0 0 0 1000px #465a7e inset !important;
+  box-shadow: 0 0 0 1000px #465a7e inset !important;
+  background-image: linear-gradient(#465a7e, #465a7e) !important;
+  background-color: #465a7e !important;
 }
 
 .auth-input input[type="tel"] {
