@@ -239,8 +239,13 @@ On Windows PowerShell, for the current terminal session:
 $env:PARKING_DB_PASSWORD = "<your-local-password>"
 ```
 
-Run the generated `parking_backend` executable. It listens on the configured
-server port. The backend exits with a configuration error if
+Start the backend from the project root:
+
+```powershell
+.\backend\build\parking_backend.exe
+```
+
+It listens on the configured server port. The backend exits with a configuration error if
 `PARKING_DB_PASSWORD` is missing or `PARKING_SERVER_PORT` is invalid.
 
 ## Documentation
